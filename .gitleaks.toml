@@ -1,0 +1,13 @@
+# gitleaks config. Extends the default rule set and allowlists fixture/data
+# directories that legitimately contain synthetic secrets: agent benchmark
+# traces (captured model output) and the example/demo inputs (including the
+# deliberately-vulnerable codebase_security demo). Source code is still scanned.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic secrets in benchmark traces and example/demo fixtures, not real credentials"
+paths = [
+  '''bench/traces/''',
+  '''examples/data/''',
+]

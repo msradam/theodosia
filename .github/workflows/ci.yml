@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
@@ -49,3 +49,48 @@ jobs:
         run: uv run bandit -r src/theodosia --severity-level medium
       - name: pip-audit (dependency vulnerabilities)
         run: uvx pip-audit
+
+  secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: gitleaks (secret scan; .gitleaks.toml allowlists fixture data)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Install the built wheel against the newest in-range dependencies (NOT the
+  # lockfile) and exercise it, so a fresh user's dependency floor is tested,
+  # not just the pinned dev env. This is the gate that catches the class of
+  # regression the lock masked (e.g. the typer-0.26 vendored-click break).
+  fresh-install:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: build wheel
+        run: uv build --wheel
+      - name: install wheel into a clean env (resolves newest in-range deps)
+        run: |
+          uv venv /tmp/fresh
+          uv pip install --python /tmp/fresh/bin/python dist/*.whl pytest pytest-asyncio
+      - name: offline primer runs
+        run: /tmp/fresh/bin/theodosia primer > /dev/null
+      - name: CLI usage errors render cleanly (exit 2, no traceback)
+        run: |
+          rc=0; /tmp/fresh/bin/theodosia sessions ls --app-dir nope || rc=$?
+          test "$rc" -eq 2
+          rc=0; /tmp/fresh/bin/theodosia bogus-command || rc=$?
+          test "$rc" -eq 2
+      - name: CLI + regression tests against the freshly-installed wheel
+        run: /tmp/fresh/bin/python -m pytest tests/test_cli.py tests/test_paper_cut_fixes.py -q -p no:cacheprovider
