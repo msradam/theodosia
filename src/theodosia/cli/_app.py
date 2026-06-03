@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 from typing import Annotated, Any
 
+import click
 import typer
 
 from theodosia.adapter import ServingMode, mount
@@ -30,6 +32,17 @@ from theodosia.cli.sessions import (
 )
 from theodosia.cli.status import status, verify
 from theodosia.primer import primer
+
+# Typer >= 0.26 vendors its own copy of click under ``typer._click``, whose
+# ClickException is a different class from the top-level ``click`` one, so
+# catching only ``click.ClickException`` lets usage errors escape as raw
+# tracebacks on a fresh install. Catch both bases across the supported typer
+# range (``typer._click`` is absent before 0.26).
+_CLICK_EXCEPTIONS: tuple[type[Exception], ...] = (click.ClickException,)
+with contextlib.suppress(ImportError):
+    from typer._click.exceptions import ClickException as _VendoredClickException
+
+    _CLICK_EXCEPTIONS = (*_CLICK_EXCEPTIONS, _VendoredClickException)
 
 
 def serve(
@@ -90,6 +103,11 @@ def serve(
         upstream=_BRANDING.upstream,
     )
     transport_norm = transport.lower()
+    # FastMCP serves at a path tail, so a client connecting to the bare
+    # host:port gets a 404. Echo the full URL.
+    if transport_norm in ("http", "sse", "streamable-http"):
+        path = "/sse" if transport_norm == "sse" else "/mcp"
+        typer.echo(f"MCP endpoint: http://{host}:{port}{path}", err=True)
     if transport_norm == "stdio":
         server.run(transport="stdio")
     elif transport_norm == "http":
@@ -319,6 +337,16 @@ def run(cli: typer.Typer, argv: list[str] | None = None) -> int:
         return rv if isinstance(rv, int) else 0
     except typer.Exit as e:
         return e.exit_code or 0
+    except _CLICK_EXCEPTIONS as e:
+        # standalone_mode=False makes Click raise usage errors (unknown option,
+        # bad parameter, missing argument) instead of printing them, so without
+        # this they'd surface as a raw traceback. Render them the way Click
+        # normally would: a clean "Error: ..." line and Click's exit code (2).
+        # ``e`` is a Click-style exception (top-level or typer-vendored); both
+        # carry ``show()`` and ``exit_code`` but share no common static type.
+        exc: Any = e
+        exc.show()
+        return exc.exit_code
     except SystemExit as e:
         if e.code is None:
             return 0

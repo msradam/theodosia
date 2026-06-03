@@ -28,6 +28,7 @@ lists the legal next actions.
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from burr.core import ApplicationBuilder, State, action
@@ -35,7 +36,9 @@ from burr.core.action import Condition
 
 from theodosia import ServingMode, mount, tracker
 
-_TRACKER_PROJECT = "coffee-order-demo"
+# THEODOSIA_PROJECT override keeps concurrent runs of this demo (shared box, CI)
+# from piling into one project; pair with THEODOSIA_HOME to isolate the store.
+_TRACKER_PROJECT = os.environ.get("THEODOSIA_PROJECT", "coffee-order-demo")
 _BASE_PRICE = 5.0
 _MODIFIER_PRICE = {"extra_shot": 1.0, "oat_milk": 1.0, "syrup": 1.0}
 
@@ -133,9 +136,15 @@ def build_application():
 
 
 def build_server(mode: ServingMode = ServingMode.STEP):
-    """Mount the application as an MCP server."""
+    """Mount the application as an MCP server.
+
+    Passes the ``build_application`` factory (not a built instance) so each
+    MCP session gets its own Application and isolated state, and so the
+    fork_at / fork_from_past / reset_session tools work. Mounting a built
+    instance instead would share one FSM across every connected client.
+    """
     return mount(
-        build_application(),
+        build_application,
         mode=mode,
         name="coffee-order",
         instructions=(

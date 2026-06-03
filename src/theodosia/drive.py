@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -60,9 +61,39 @@ async def _format_resource(client: Any, uri: str) -> str:
     return getattr(result[0], "text", "") or ""
 
 
+def _default_anthropic_client() -> AsyncAnthropic:
+    """Construct an ``AsyncAnthropic`` client, with theodosia-level errors.
+
+    ``drive_claude`` talks to the Anthropic API, which needs the ``anthropic``
+    SDK installed and an API key. Both failure modes otherwise surface as bare
+    third-party errors that don't tell a new user what to do, so we translate
+    them and point at the no-key alternative (the Claude Agent SDK / Claude
+    Code, which drives a mounted server over MCP using the local login).
+    """
+    try:
+        from anthropic import AsyncAnthropic
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "drive_claude needs the Anthropic SDK: pip install 'theodosia[claude]'. "
+            "To drive a mounted server WITHOUT an API key (e.g. with only a "
+            "Claude.ai/Claude Code login), skip drive_claude and connect the "
+            "server to the Claude Agent SDK as an MCP server instead."
+        ) from exc
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise RuntimeError(
+            "drive_claude uses the Anthropic API, which needs ANTHROPIC_API_KEY "
+            "(or ANTHROPIC_AUTH_TOKEN). Set it, or pass a configured "
+            "AsyncAnthropic(...) instance. If you only have a Claude.ai/Claude "
+            "Code subscription and no API key, drive the mounted server with "
+            "the Claude Agent SDK instead (connect it as an MCP server); it "
+            "authenticates via your local Claude login."
+        )
+    return AsyncAnthropic()
+
+
 async def drive_claude(
     server: FastMCP,
-    anthropic: AsyncAnthropic,
+    anthropic: AsyncAnthropic | None = None,
     *,
     prompt: str,
     model: str = "claude-opus-4-7",
@@ -84,8 +115,15 @@ async def drive_claude(
     state, and next resources injected into its system prompt. Refusals come
     back as tool_result content with ``valid_next_actions`` populated, so the
     model can self-correct without retry prompting.
+
+    ``anthropic`` is optional: when omitted, a client is built from the
+    environment (``ANTHROPIC_API_KEY``), raising a theodosia-level error that
+    points at the no-key Agent-SDK path if the SDK or key is missing.
     """
     from fastmcp import Client
+
+    if anthropic is None:
+        anthropic = _default_anthropic_client()
 
     transcript: dict[str, Any] = {"turns": [], "final_state": None, "stopped_on": "cap"}
 

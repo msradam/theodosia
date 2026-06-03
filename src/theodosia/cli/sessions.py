@@ -313,15 +313,15 @@ def sessions_diff(
         console.print(
             Text.assemble(
                 (f"  {key}: ", "muted"),
-                (f"{va}", "err"),
+                (str(va), "err"),
                 (" → ", "muted"),
-                (f"{vb}", "ok"),
+                (str(vb), "ok"),
             )
         )
     for key in only_a:
-        console.print(Text.assemble((f"  -{key}: ", "err"), (f"{state_a[key]}", "muted")))
+        console.print(Text.assemble((f"  -{key}: ", "err"), (str(state_a[key]), "muted")))
     for key in only_b:
-        console.print(Text.assemble((f"  +{key}: ", "ok"), (f"{state_b[key]}", "muted")))
+        console.print(Text.assemble((f"  +{key}: ", "ok"), (str(state_b[key]), "muted")))
 
 
 def _tail(log_path: Path, *, project: str, app_id: str, poll_interval: float) -> None:

@@ -75,9 +75,38 @@ from theodosia.upstream import UpstreamManager, bind_upstream, reset_upstream
 ApplicationFactory = Callable[[], Application]
 ApplicationOrFactory = Application | ApplicationFactory
 
+logger = logging.getLogger("theodosia")
+
 # Defaults for session-store eviction.
 _DEFAULT_SESSION_TTL_SECONDS = 3600  # 1 hour idle
 _DEFAULT_MAX_SESSIONS = 100
+
+#: Set once the shared-app isolation warning has fired, so a process that
+#: mounts many instance-mode servers gets the message once, not per mount.
+_shared_app_warned = False
+
+
+def _warn_shared_app_mode() -> None:
+    """Warn that an instance-mounted server shares one FSM across all sessions.
+
+    Mounting a built ``Application`` (rather than a ``() -> Application``
+    factory) is the documented shared-state mode and is fine for a single
+    stdio client. But on a multi-client transport (HTTP/SSE) every connected
+    client mutates the same Application: no per-session isolation, and the
+    fork/reset tools refuse. The warning steers users to factory mode before
+    they discover this the hard way.
+    """
+    global _shared_app_warned
+    if _shared_app_warned:
+        return
+    _shared_app_warned = True
+    logger.warning(
+        "theodosia: mounted a built Application (shared-app mode). All MCP "
+        "sessions share one FSM and its state; fork_at/fork_from_past/"
+        "reset_session are disabled. Fine for a single stdio client, but on "
+        "an HTTP/SSE transport connected clients are NOT isolated. Pass a "
+        "factory `() -> Application` to mount() for per-session isolation."
+    )
 
 
 class ServingMode(str, Enum):  # noqa: UP042  # (str, Enum) for stable wire serialization
@@ -1108,6 +1137,8 @@ def mount(
 
     _silence_fastmcp_loggers()
     shared_app, factory = _resolve(application)
+    if factory is None:
+        _warn_shared_app_mode()
 
     # When user-supplied hooks are provided, wrap shared_app or factory so
     # the hooks are attached after construction. Burr's adapter set is a
@@ -1821,10 +1852,16 @@ def mount(
     # in-memory history rather than Burr's tracker-based replay so it
     # works without requiring users to wire up a LocalTrackingClient.
 
-    async def fork_at(sequence_id: int, ctx: Context | None = None) -> ToolResult | dict[str, Any]:
+    async def fork_at(
+        sequence_id: int | None = None,
+        seq: int | None = None,
+        ctx: Context | None = None,
+    ) -> ToolResult | dict[str, Any]:
         """Rewind the session to the state captured after history[seq=N].
 
         ``sequence_id`` is the ``seq`` field on a ``theodosia://history`` entry.
+        ``seq`` is accepted as an alias so a client can copy the value straight
+        from history under either name (``sequence_id`` wins if both are given).
         The session's Application is rebuilt via the factory, then its
         state is overwritten with the snapshot captured at that point,
         and its ``__PRIOR_STEP`` is set to the action name from that
@@ -1854,6 +1891,19 @@ def mount(
             )
         if ctx is None:
             return _step_tool_result({"error": "no_session"}, "fork_at × no_session")
+        if sequence_id is None:
+            sequence_id = seq
+        if sequence_id is None:
+            return _step_tool_result(
+                {
+                    "error": "missing_sequence_id",
+                    "reason": (
+                        "pass sequence_id (the `seq` field from a "
+                        "theodosia://history entry); `seq` is accepted as an alias."
+                    ),
+                },
+                "fork_at × missing_sequence_id",
+            )
 
         entry = store.get_or_create(ctx.session_id, factory)
         async with entry.lock:

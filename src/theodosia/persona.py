@@ -67,8 +67,12 @@ def render_with_frame(text: str, frame: dict[str, Any] | None) -> str:
 
     def _resolve(match: re.Match[str]) -> str:
         cur: Any = frame
+        # Resolve only dict keys. Descending into arbitrary object attributes
+        # via getattr would let a persona walk Python internals
+        # (``{state.x.__class__.__mro__}``) and leak type structure into the
+        # prompt; the frame is plain data, so a non-dict segment is a dead end.
         for part in match.group(1).split("."):
-            cur = cur.get(part) if isinstance(cur, dict) else getattr(cur, part, None)
+            cur = cur.get(part) if isinstance(cur, dict) else None
             if cur is None:
                 return ""
         if cur is None:

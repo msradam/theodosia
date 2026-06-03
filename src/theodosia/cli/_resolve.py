@@ -18,18 +18,38 @@ from theodosia.cli._branding import (
 )
 
 
+def _looks_like_path(s: str) -> bool:
+    return s.endswith(".py") or "/" in s or os.sep in s
+
+
 def _import_target(target: str, extra_paths: list[str] | None = None) -> Any:
+    extra = list(extra_paths or [])
     if ":" not in target:
+        if _looks_like_path(target):
+            stem = Path(target).stem
+            raise SystemExit(
+                f"got a file path ({target!r}), but a target is module:attr. "
+                f"Name the attribute too, e.g. {stem}:build_application "
+                f"(point at the file with {target}:build_application and the "
+                f"module's directory is added to sys.path automatically)."
+            )
         raise SystemExit(
             f"target must be of the form module:attr (got {target!r}). "
             f"Example: coffee_order:build_application"
         )
-    paths = [str(Path.cwd()), *(extra_paths or [])]
+    module_name, _, attr = target.partition(":")
+    # Accept a file path in the module position (``path/to/foo.py:attr``): add
+    # the file's directory to sys.path and import by stem, so a user can point
+    # at a script without first turning it into an importable dotted name.
+    if _looks_like_path(module_name):
+        file_path = Path(module_name).expanduser()
+        extra = [str(file_path.parent), *extra]
+        module_name = file_path.stem
+    paths = [str(Path.cwd()), *extra]
     for p in paths:
         absp = os.path.abspath(p)
         if absp not in sys.path:
             sys.path.insert(0, absp)
-    module_name, _, attr = target.partition(":")
     try:
         module = importlib.import_module(module_name)
     except ImportError as exc:
@@ -53,8 +73,9 @@ def _resolve_serve_target(target: str | None, app_dir: list[str]) -> tuple[Any, 
     src = _BRANDING.application if target is None else target
     if src is None:
         raise SystemExit(
-            "serve needs a target in module:attr form (e.g. coffee_order:build_application), "
-            "or a graph baked in via build_cli(application=...)."
+            "needs a target in module:attr form (e.g. coffee_order:build_application), "
+            "or a graph baked in via build_cli(application=...). New here? Run "
+            "`theodosia primer` for a zero-config, offline demo of the step loop."
         )
     if isinstance(src, str):
         return _import_target(src, app_dir), src.split(":", 1)[0].split(".")[-1]

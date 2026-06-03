@@ -159,7 +159,7 @@ def test_build_cli_target_overrides_baked_in(restore_branding):
 
 def test_serve_without_target_or_baked_in_raises(restore_branding):
     build_cli("theodosia")  # no baked-in application
-    with pytest.raises(SystemExit, match="serve needs a target"):
+    with pytest.raises(SystemExit, match="needs a target in module:attr form"):
         cli._resolve_serve_target(None, [])
 
 
