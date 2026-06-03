@@ -23,8 +23,13 @@ bodies that run them. The table below names what is trusted and what is not.
 - **State integrity.** State lives on the server, keyed per session. The agent
   cannot assert a state it is not in; every state change is the recorded result
   of a server-executed action.
-- **Boundary validation.** Inputs are coerced to the declared schema, and
-  optional `input_validators` reject bad inputs before the action body runs.
+- **Boundary validation.** The `step` tool advertises each action's declared
+  input schema (types and `Literal` choices) to the caller, and where an action
+  annotates a Pydantic model the dict is coerced into that model before the body
+  runs. The server does **not** otherwise enforce scalar types or `Literal`
+  values: a malformed value reaches the action body and surfaces as a structured
+  `action_error`. Wire `input_validators` to reject bad inputs (as a
+  `validation_failed` refusal) before the body runs.
 - **An honest, verifiable record.** Every attempt, including refusals, is
   recorded to the per-session history and Burr's tracker, so the trail reflects
   what the agent tried, not its own account. Each attempt is also hash-chained
@@ -62,10 +67,19 @@ write access.
 
 ## Per-session isolation
 
-Each MCP session gets its own `Application` instance, keyed by FastMCP's
-`ctx.session_id`. The store lives in a closure scope inside `mount()`,
-not in a module global, so two `mount()` calls in the same process do
+Per-session isolation requires **factory mode**: pass a `() -> Application`
+factory to `mount()`. Each MCP session then gets its own `Application` instance,
+keyed by FastMCP's `ctx.session_id`. The store lives in a closure scope inside
+`mount()`, not in a module global, so two `mount()` calls in the same process do
 not bleed sessions into each other.
+
+Mounting a built `Application` instance instead is **shared-app mode**: every
+session mutates one FSM, so there is no per-session isolation. On a multi-client
+transport (HTTP/SSE, where `ctx.session_id` can be null) connected clients then
+share one FSM and its state outright. `mount()` logs a warning in this mode, and
+`fork_at` / `fork_from_past` / `reset_session` refuse. Use a factory for any
+server more than one client can reach; reserve the instance form for a single
+stdio client or a deliberately shared FSM.
 
 `fork_from_past(app_id, partition_key=...)` reaches into a different
 session's persisted state through the persister. To prevent a tenant-A

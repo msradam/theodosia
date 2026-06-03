@@ -35,10 +35,14 @@ The frontmatter is parsed as YAML. `name` and `description` are required;
 
 Three accepted shapes for the `personas` keyword:
 
+Any `*.md` file in the directory is loaded, whatever its filename. A persona's
+identity comes from the `name:` field in its frontmatter, not the filename, so
+`PERSONA.md`, `on-call-sre.md`, and `careful.md` are all fine.
+
 ```python
 from theodosia import mount
 
-# A directory of PERSONA.md files
+# A directory of *.md files (any filename; one persona per file)
 mount(build_application, personas="personas/")
 
 # A single file

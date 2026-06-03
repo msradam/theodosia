@@ -29,9 +29,12 @@ about the rover changes.
 
 What you need:
 
-- Python 3.11 to 3.13.
+- Python 3.11 to 3.14.
 - A Together API key (any OpenAI-compatible endpoint works; Together is what
-  this guide uses).
+  this guide uses) for the coding model in Step 2 and the teaching driver in
+  Step 5. If you only have a Claude.ai/Claude Code login and no API key, skip
+  straight to [Step 5c](#step-5c-drive-it-with-claude-no-api-key), which drives
+  the mounted server through the Claude Agent SDK with no key.
 - A few minutes.
 
 ```bash
@@ -508,6 +511,77 @@ Claude Code or Cursor at the same `theodosia serve` command in their `.mcp.json`
 or keep the hand-rolled loop from Step 5. The workflow, the gates, and the
 recorded session are identical no matter who drives, because the contract is the
 MCP server, not the client.
+
+## Step 5c: Drive it with Claude, no API key
+
+If you have a Claude.ai or Claude Code subscription but no model API key, you can
+still drive the rover. The [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview)
+authenticates through your local Claude login, launches `theodosia serve` as a
+stdio MCP server, and lets Claude drive the `step` tool. No key, no extra config.
+
+If you jumped straight here to avoid an API key, you won't have `rover.py` yet
+(Step 2 writes it with a coding model). Point the target below at any mounted FSM
+instead, for example the bundled coffee-order example:
+`theodosia serve coffee_order:build_application` (after `pip install theodosia`,
+the example ships in the repo's `examples/` directory; or hand-write a small
+graph following [Authoring a graph](authoring.md)).
+
+```bash
+uv pip install claude-agent-sdk
+```
+
+```python
+# drive_with_claude.py
+import asyncio
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "rover": {
+            "command": "theodosia",
+            "args": ["serve", "rover:build_application", "--app-dir", "."],
+        }
+    },
+    allowed_tools=["mcp__rover__step"],
+    permission_mode="bypassPermissions",
+)
+
+PROMPT = (
+    "Drive the rover with the step tool. Try deploy_sample_arm first (before "
+    "powering on), then recover from the refusal using valid_next_actions, "
+    "collect one sample, and power down."
+)
+
+
+async def main() -> None:
+    async with ClaudeSDKClient(options) as claude:
+        await claude.query(PROMPT)
+        async for message in claude.receive_response():
+            print(message)
+
+
+asyncio.run(main())
+```
+
+```bash
+python drive_with_claude.py
+```
+
+The same refusal-and-recover story plays out: Claude tries the illegal action,
+the server refuses with `valid_next_actions`, and Claude reads it and recovers.
+The equivalent for Claude Code itself is an `.mcp.json` pointing at the same
+`theodosia serve` command:
+
+```json
+{
+  "mcpServers": {
+    "rover": {
+      "command": "theodosia",
+      "args": ["serve", "rover:build_application", "--app-dir", "."]
+    }
+  }
+}
+```
 
 ## Step 6: Read the recorded session
 

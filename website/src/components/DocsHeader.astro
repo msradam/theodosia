@@ -56,7 +56,8 @@ const isApi = ['tools', 'cli', 'compatibility', 'upstream', 'observability'].inc
 
 <style is:global>
   .thd-docs-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 24px;
     width: 100%;
@@ -67,7 +68,7 @@ const isApi = ['tools', 'cli', 'compatibility', 'upstream', 'observability'].inc
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 0 0 auto;
+    justify-self: start;
   }
   .thd-docs-header .brand-link {
     display: inline-flex;
@@ -107,7 +108,7 @@ const isApi = ['tools', 'cli', 'compatibility', 'upstream', 'observability'].inc
     display: flex;
     align-items: center;
     gap: 26px;
-    margin-left: 16px;
+    justify-self: center;
   }
   .thd-docs-header .links a {
     color: var(--thd-subtle);
@@ -120,11 +121,10 @@ const isApi = ['tools', 'cli', 'compatibility', 'upstream', 'observability'].inc
   .thd-docs-header .links a:hover { color: var(--thd-ink); }
   .thd-docs-header .links a.active { color: var(--thd-pine); font-weight: 600; }
   .thd-docs-header .right {
-    margin-left: auto;
+    justify-self: end;
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 0 0 auto;
   }
   .thd-docs-header .search-slot { min-width: 200px; }
   .thd-docs-header .gh-link {

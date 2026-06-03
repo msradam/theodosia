@@ -15,6 +15,12 @@ sessions write to `~/.burr` and you must point the CLI at it with
 two audiences (theodosia-first vs Burr-first); pick one per project and stay
 consistent.
 
+`~/.theodosia` is shared per-machine. To isolate a deployment's store (per
+service, per tenant, or to keep CI runs from colliding), set `THEODOSIA_HOME` in
+the server environment, or pass `tracker(project=..., storage_dir=...)`. The CLI
+honours the same `THEODOSIA_HOME`, so `sessions` / `report` / `verify` read the
+isolated store without extra flags (or pass `--home` per call).
+
 ![theodosia logs replaying a session timeline, including a refused step](/theodosia/observability.gif)
 
 ## Replay a session

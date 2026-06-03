@@ -110,6 +110,26 @@ finds your runs with no extra flags. If you instead wire Burr's native tracker
 point the CLI at it: `theodosia sessions ls --home ~/.burr -p incident`. Pick
 one and stay consistent.
 
+`~/.theodosia` is **shared** across every app on the machine. Two people running
+the same example, or CI jobs running in parallel, collide in one store unless
+you isolate it. Two knobs do that:
+
+- `THEODOSIA_HOME=/path/to/store` (env) redirects the store directory. The CLI
+  reads the same variable, so `sessions ls` / `verify` / `report` follow
+  automatically. Equivalent per-call: `tracker(project=..., storage_dir=...)`.
+- `project=` namespaces runs *within* a store. Give each app or tenant its own
+  project name so `sessions ls -p <name>` stays legible.
+
+Quick glossary, since these terms recur:
+
+- **action**: one `@action` function; reads/writes named state fields.
+- **transition**: a legal edge between two actions, gated by a `Condition`.
+- **tracker**: where a session's steps are recorded on disk (the store).
+- **project**: the namespace a session is filed under in the store.
+- **app_id**: the unique id of one session (one Application run).
+- **partition_key**: an optional tenant label set via Burr's
+  `with_identifiers(partition_key=...)`; surfaces in `theodosia://session`.
+
 ## Trap 3: `Condition.expr` reads pre-step state
 
 A transition's condition is evaluated against the state of the source action

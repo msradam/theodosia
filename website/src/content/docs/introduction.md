@@ -15,8 +15,18 @@ Theodosia mounts a Burr `Application` as an MCP server. Every Burr `@action` is 
 
 ## Try it without an API key
 
+Install into a virtual environment (Python 3.11 to 3.14). The venv avoids the
+`externally-managed-environment` error a global `pip install` hits on
+Homebrew/Debian Python:
+
 ```bash
+python -m venv .venv && source .venv/bin/activate
 pip install theodosia
+```
+
+Then run the offline demo:
+
+```bash
 theodosia primer
 ```
 
