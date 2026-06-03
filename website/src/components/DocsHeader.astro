@@ -88,10 +88,9 @@ const isApi = ['tools', 'cli', 'compatibility', 'upstream', 'observability'].inc
     color: var(--thd-seal);
     line-height: 1;
     flex: 0 0 auto;
-    /* Optical baseline nudge: the turnstile glyph sits high in Inria Serif
-       (horizontal bar at cap line), so we pull it down to match the wordmark
-       x-height visually. */
-    transform: translateY(2px);
+    /* Optical nudge: the ⊢ glyph's line box centers lower than the wordmark's
+       cap height, so lift it slightly to sit centered against "Theodosia". */
+    transform: translateY(-2px);
   }
   .thd-docs-header .brand .wm {
     font-family: var(--thd-display);
