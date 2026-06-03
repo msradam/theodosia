@@ -81,7 +81,13 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .nav .ver{font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 9px;border:1px solid var(--edge);border-radius:var(--r-pill);background:var(--sheet)}
   .nav .gh{font-family:var(--sans);font-size:13.5px;font-weight:500;color:var(--paper);background:var(--ink);padding:9px 16px;border-radius:var(--r-md);text-decoration:none;transition:background .15s}
   .nav .gh:hover{background:#1a1a1a}
-  @media(max-width:820px){.nav .links{display:none}}
+  @media(max-width:820px){
+    .nav .links{display:none}
+    /* The nav links collapse here, so center the wordmark instead of leaving
+       it pinned left by space-between; version + GitHub stay right-aligned. */
+    .nav .in{position:relative;justify-content:flex-end}
+    .nav .brand{position:absolute;left:50%;transform:translateX(-50%)}
+  }
 
   /* HERO */
   .hero{display:grid;grid-template-columns:1.05fr 0.95fr;gap:56px;align-items:center;padding:80px 0 72px}
@@ -270,6 +276,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   }
   @media(max-width:560px){
     .wrap,.nav .in{padding:0 22px}
+    .nav .ver{display:none}  /* drop the version pill so the centered wordmark isn't crowded */
     .lp-footer{grid-template-columns:1fr}
     .mech-body{padding:24px 16px}
     /* Bump label sizes a touch on small screens so the TB-direction diagram
