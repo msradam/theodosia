@@ -8,6 +8,33 @@ versioning.
 
 _Nothing yet._
 
+## [0.4.2] - 2026-06-04
+
+A branded session console and two small observability additions. No API
+breakage; the same four-tool surface and tracker format.
+
+### Added
+
+- Branded session console: `theodosia ui` now serves a themed, sidebar-free
+  view of Burr's tracking UI (a co-brand bar with the CLI's name, scoped to
+  the resolved store) instead of Burr's stock chrome. Burr remains credited
+  in the bar ("UI by Apache Burr"); a rebranded CLI also shows "powered by
+  Theodosia". `--vanilla` keeps Burr's unthemed UI, `--home` scopes the
+  store.
+- `build_cli(ui_title=..., ui_mark=...)` to set the session console's
+  display name and glyph for a rebranded distribution.
+- `theodosia sessions tail` and `theodosia watch` take `--once`: render a
+  single snapshot and exit instead of live-tailing. Pipe- and CI-friendly.
+- `theodosia verify --json` emits a portable attestation receipt
+  (`{ok, entries, head_hash, keyed, problems}`) you can store and re-verify
+  later. New `theodosia.ledger.attestation_receipt`.
+
+### Changed
+
+- Session-console deep-link footers in `status` and `sessions show` now read
+  "<name> console:" instead of "Burr UI:", pointing at the themed console.
+- `ui --help` no longer names internal env vars in a rebranded CLI.
+
 ## [0.4.1] - 2026-05-30
 
 Patch release addressing reliability and correctness findings from a code
