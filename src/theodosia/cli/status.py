@@ -16,6 +16,7 @@ from theodosia.cli._branding import (
     _BRANDING,
     _BURR_UI_DEFAULT_HOST,
     _BURR_UI_DEFAULT_PORT,
+    brand_display_name,
     console,
     err_console,
 )
@@ -182,7 +183,7 @@ def status(
         return
     console.print()
     console.print(_build_status_table(payload["projects"]))
-    console.print(f"\n[muted]Burr UI:[/] [link={ui_root}]{ui_root}[/]")
+    console.print(f"\n[muted]{brand_display_name()} console:[/] [link={ui_root}]{ui_root}[/]")
 
 
 def verify(
@@ -200,29 +201,56 @@ def verify(
             "--home", help="Tracker storage root. Overrides the CLI default (see --help)."
         ),
     ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit a machine-readable attestation receipt (chain head hash + entry count).",
+        ),
+    ] = False,
 ) -> None:
     """Verify a session's tamper-evident ledger. Exits nonzero if the chain is broken.
 
     Every step and refusal is hash-chained into ``ledger.jsonl`` next to the
     session's tracker log. This recomputes the chain and names the exact line
-    where any after-the-fact edit, reorder, or deletion broke it.
+    where any after-the-fact edit, reorder, or deletion broke it. ``--json``
+    emits a portable attestation receipt (chain head hash + entry count) you
+    can store and re-verify later.
     """
-    from theodosia.ledger import verify_ledger
+    from theodosia.ledger import attestation_receipt
 
     home = _resolve_home(home)
     log_path, proj, aid = _resolve_app(home, project, app_id)
     ledger_path = log_path.parent / "ledger.jsonl"
     if not ledger_path.exists():
-        err_console.print(
-            f"[err]No ledger for[/] {proj}/{aid} [muted](no ledger.jsonl; "
-            "the session ran without a local tracker)[/]"
-        )
+        if as_json:
+            console.print_json(
+                data={"project": proj, "app_id": aid, "ok": False, "error": "no_ledger"}
+            )
+        else:
+            err_console.print(
+                f"[err]No ledger for[/] {proj}/{aid} [muted](no ledger.jsonl; "
+                "the session ran without a local tracker)[/]"
+            )
         raise typer.Exit(code=1)
-    ok, problems = verify_ledger(ledger_path)
-    if ok:
-        console.print(f"[ok]⊢ ledger intact[/]  {proj}/{aid}")
+
+    receipt = attestation_receipt(ledger_path)
+    if as_json:
+        console.print_json(data={"project": proj, "app_id": aid, **receipt})
+        if not receipt["ok"]:
+            raise typer.Exit(code=1)
+        return
+
+    if receipt["ok"]:
+        head = receipt["head_hash"]
+        head_short = head.split(":", 1)[-1][:12] if head else "—"
+        keyed = " · HMAC-keyed" if receipt["keyed"] else ""
+        console.print(
+            f"[ok]⊢ ledger intact[/]  {proj}/{aid}  "
+            f"[muted]· {receipt['entries']} entries · head {head_short}{keyed}[/]"
+        )
         return
     err_console.print(f"[err]× ledger TAMPERED[/]  {proj}/{aid}")
-    for p in problems:
+    for p in receipt["problems"]:
         err_console.print(f"  [err]{p}[/]")
     raise typer.Exit(code=1)

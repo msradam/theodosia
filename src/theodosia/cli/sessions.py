@@ -12,7 +12,7 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
-from theodosia.cli._branding import console, err_console
+from theodosia.cli._branding import brand_display_name, console, err_console
 from theodosia.cli._resolve import (
     _burr_ui_url,
     _locate_project_home,
@@ -156,7 +156,7 @@ def sessions_show(
         typer.Option(
             "--open",
             help=(
-                "Open this session in the Burr UI in the default browser "
+                "Open this session in the session console in the default browser "
                 "(honors BURR_UI_HOST / BURR_UI_PORT)."
             ),
         ),
@@ -189,7 +189,7 @@ def sessions_show(
 
     if not rows:
         console.print(f"[dim]No steps recorded yet at {log_path}[/]")
-        console.print(f"[muted]Burr UI:[/] [link={ui_url}]{ui_url}[/]")
+        console.print(f"[muted]{brand_display_name()} console:[/] [link={ui_url}]{ui_url}[/]")
         return
 
     table = _build_steps_table(
@@ -199,7 +199,7 @@ def sessions_show(
         title_suffix=f"  {len(rows)} step(s)",
     )
     console.print(table)
-    console.print(f"[muted]Burr UI:[/] [link={ui_url}]{ui_url}[/]")
+    console.print(f"[muted]{brand_display_name()} console:[/] [link={ui_url}]{ui_url}[/]")
 
 
 def _diff_state_dicts(
@@ -324,19 +324,26 @@ def sessions_diff(
         console.print(Text.assemble((f"  +{key}: ", "ok"), (str(state_b[key]), "muted")))
 
 
-def _tail(log_path: Path, *, project: str, app_id: str, poll_interval: float) -> None:
-    """Live-render the tracker log via rich.Live."""
+def _tail(
+    log_path: Path, *, project: str, app_id: str, poll_interval: float, once: bool = False
+) -> None:
+    """Live-render the tracker log via rich.Live, or one static snapshot when ``once``."""
 
-    def render() -> Table:
+    def render(*, live: bool) -> Table:
         rows = _read_steps(log_path)
-        suffix = f"  [dim]· {len(rows)} step(s) · polling {poll_interval}s · Ctrl-C to stop[/]"
+        hint = f" · polling {poll_interval}s · Ctrl-C to stop" if live else ""
+        suffix = f"  [dim]· {len(rows)} step(s){hint}[/]"
         return _build_steps_table(rows, project=project, app_id=app_id, title_suffix=suffix)
 
+    if once:
+        console.print(render(live=False))
+        return
+
     try:
-        with Live(render(), console=console, refresh_per_second=4, screen=False) as live:
+        with Live(render(live=True), console=console, refresh_per_second=4, screen=False) as view:
             while True:
                 time.sleep(poll_interval)
-                live.update(render())
+                view.update(render(live=True))
     except KeyboardInterrupt:
         console.print("[dim](stopped)[/]")
 
@@ -359,11 +366,17 @@ def sessions_tail(
     poll_interval: Annotated[
         float, typer.Option("--poll", help="Polling interval in seconds.")
     ] = 0.5,
+    once: Annotated[
+        bool,
+        typer.Option(
+            "--once", help="Print one snapshot and exit (for pipes/CI) instead of live-tailing."
+        ),
+    ] = False,
 ) -> None:
     """Live-tail a running (or completed) session as a rich-rendered table."""
     home = _resolve_home(home)
     log_path, proj, aid = _resolve_app(home, project, app_id)
-    _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval)
+    _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval, once=once)
 
 
 def watch(
@@ -391,6 +404,12 @@ def watch(
     poll_interval: Annotated[
         float, typer.Option("--poll", help="Polling interval in seconds.")
     ] = 0.5,
+    once: Annotated[
+        bool,
+        typer.Option(
+            "--once", help="Print one snapshot and exit (for pipes/CI) instead of live-tailing."
+        ),
+    ] = False,
 ) -> None:
     """Alias for `sessions tail`. Lives at the top level for muscle memory."""
     home = _resolve_home(home)
@@ -401,7 +420,7 @@ def watch(
         err_console.print(f"[err]No Burr tracker storage at[/] {home}")
         raise typer.Exit(code=1)
     log_path, proj, aid = _resolve_app(home, project, app_id)
-    _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval)
+    _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval, once=once)
 
 
 def logs(

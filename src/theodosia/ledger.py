@@ -35,6 +35,7 @@ locks) on top.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -192,6 +193,37 @@ def verify_ledger(
             f"truncation: ledger has {count} entries; expected at least {expected_min_entries}"
         )
     return (not problems), problems
+
+
+def attestation_receipt(path: str | Path, *, key: bytes | None = None) -> dict[str, Any]:
+    """A portable, machine-readable proof of a ledger's chain head.
+
+    Returns ``{ok, entries, head_hash, keyed, problems}``. Store the receipt
+    next to an external audit record; re-running verification later and
+    checking ``head_hash`` still matches proves no entry was added, removed,
+    or altered since. A missing ledger is vacuously valid (``None`` head,
+    zero entries).
+    """
+    p = Path(path)
+    ok, problems = verify_ledger(p, key=key)
+    head: str | None = None
+    entries = 0
+    if p.exists():
+        with p.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                entries += 1
+                with contextlib.suppress(json.JSONDecodeError):
+                    head = json.loads(line).get("hash", head)
+    return {
+        "ok": ok,
+        "entries": entries,
+        "head_hash": head,
+        "keyed": _resolve_key(key) is not None,
+        "problems": problems,
+    }
 
 
 def _check_entry(

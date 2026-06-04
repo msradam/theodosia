@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -157,19 +158,74 @@ def doctor(
 
 
 def ui(
-    port: Annotated[int, typer.Option("--port", help="Port for the Burr UI server.")] = 7241,
+    port: Annotated[int, typer.Option("--port", help="Port for the UI server.")] = 7241,
     host: Annotated[
         str,
         typer.Option("--host", help="Bind address. Use 0.0.0.0 to expose on the network."),
     ] = "127.0.0.1",
+    home: Annotated[
+        Path | None,
+        typer.Option("--home", help="Tracker storage root to read sessions from."),
+    ] = None,
+    vanilla: Annotated[
+        bool,
+        typer.Option("--vanilla", help="Launch Burr's unthemed UI instead of the branded console."),
+    ] = False,
     no_open: Annotated[
         bool, typer.Option("--no-open", help="Don't open a browser tab when the UI starts.")
     ] = False,
 ) -> None:
-    """Launch the Burr UI to inspect tracked sessions.
+    """Launch the session console: a branded, sidebar-free view of tracked sessions.
 
-    Prefers the local install if apache-burr\\[start] is present (one
-    process). Otherwise shells out to ``uvx --from 'apache-burr\\[start]'``.
+    Reads from the resolved storage root (``--home``, the configured home, or
+    the default). A rebranded CLI shows its own name; pass ``--vanilla`` for
+    Burr's stock UI (bootstrapped via uvx if needed).
+    """
+    from theodosia.cli._resolve import _resolve_home
+
+    storage_dir = _resolve_home(home)
+
+    if vanilla:
+        _launch_vanilla_ui(host=host, port=port, no_open=no_open, storage_dir=storage_dir)
+        return
+
+    from theodosia._ui import brand_identity, serve_themed
+
+    name, mark, credit = brand_identity(
+        _BRANDING.prog_name, ui_title=_BRANDING.ui_title, ui_mark=_BRANDING.ui_mark
+    )
+
+    console.print(
+        f"Launching {name} session console on [link]http://{host}:{port}[/link]  "
+        f"[muted](reading {storage_dir})[/]"
+    )
+    try:
+        serve_themed(
+            host=host,
+            port=port,
+            storage_dir=storage_dir,
+            name=name,
+            mark=mark,
+            subtitle="session tracking",
+            credit_html=credit,
+            open_browser=not no_open,
+        )
+    except ImportError as exc:
+        err_console.print(
+            f"the session console needs the UI extra: try "
+            f"[bold]uv pip install '{_BRANDING.ui_extra}'[/], or run with "
+            "[bold]--vanilla[/] to bootstrap Burr's UI via uvx."
+        )
+        raise typer.Exit(code=1) from exc
+    except KeyboardInterrupt:
+        pass
+
+
+def _launch_vanilla_ui(*, host: str, port: int, no_open: bool, storage_dir: Path) -> None:
+    """Burr's stock UI, scoped to ``storage_dir`` via the ``burr_path`` env var.
+
+    Prefers a local apache-burr\\[start] (one process); otherwise shells out to
+    ``uvx --from 'apache-burr\\[start]'``.
     """
     import shutil
     import subprocess
@@ -177,6 +233,7 @@ def ui(
     forwarded = ["--port", str(port), "--host", host]
     if no_open:
         forwarded.append("--no-open")
+    env = {**os.environ, "burr_path": str(storage_dir)}
 
     try:
         import loguru  # noqa: F401 (probe-only)
@@ -199,7 +256,7 @@ def ui(
 
     console.print(f"Launching Burr UI on [link]http://{host}:{port}[/link]")
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
     except subprocess.CalledProcessError as exc:
         raise typer.Exit(code=exc.returncode or 1) from exc
     except KeyboardInterrupt:
@@ -233,6 +290,8 @@ def build_cli(
     ui_extra: str = "theodosia[ui]",
     home: str | Path | None = None,
     upstream: dict[str, Any] | None = None,
+    ui_mark: str | None = None,
+    ui_title: str | None = None,
 ) -> typer.Typer:
     """Build a theodosia CLI, optionally rebranded for a downstream package.
 
@@ -267,6 +326,11 @@ def build_cli(
             Action bodies reach these other MCP servers with
             ``call_upstream(server, tool, args)``. Passed through to
             ``mount`` by ``serve``.
+        ui_mark: glyph shown before the name in the ``ui`` session console's
+            brand bar. Defaults to none for a rebrand (Theodosia's own CLI
+            shows ``⊢``).
+        ui_title: display name in the brand bar. Defaults to ``prog_name``
+            with its first letter capitalized.
     """
     _set_branding(
         _Branding(
@@ -276,6 +340,8 @@ def build_cli(
             ui_extra=ui_extra,
             home=home,
             upstream=upstream,
+            ui_mark=ui_mark,
+            ui_title=ui_title,
         )
     )
 

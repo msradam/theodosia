@@ -70,6 +70,11 @@ def tracker(project: str, storage_dir: str | None = None, **kwargs):
     ``~/.theodosia``. This keeps a downstream rebrand's tracker writes and
     CLI reads pointed at the same root without forcing every author to
     thread ``storage_dir`` through manually.
+
+    Note for standalone scripts (seeding/tests that build the app *outside*
+    the CLI process, where ``build_cli`` never ran): the branded ``home`` is
+    not visible, so writes land in ``~/.theodosia``. Pass ``storage_dir``
+    explicitly, or set ``THEODOSIA_HOME``, to land them in the branded store.
     """
     import contextlib
     import os

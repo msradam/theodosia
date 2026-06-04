@@ -60,6 +60,8 @@ class _Branding:
     ui_extra: str = "theodosia[ui]"
     home: str | Path | None = None  # default tracker storage_dir
     upstream: dict[str, Any] | None = None  # other MCP servers actions can call
+    ui_mark: str | None = None  # glyph shown before the name in the themed UI bar
+    ui_title: str | None = None  # display name in the themed UI bar; defaults from prog_name
 
 
 _BRANDING = _Branding()
@@ -74,6 +76,15 @@ def _set_branding(branding: _Branding) -> None:
     """
     for f in fields(_BRANDING):
         setattr(_BRANDING, f.name, getattr(branding, f.name))
+
+
+def brand_display_name() -> str:
+    """The brand's display name: ``ui_title`` if set, else the capitalized
+    program name. Used for the themed-UI bar and the session-console footers
+    so a rebranded CLI points users at *its* console, not a generic one.
+    """
+    prog = _BRANDING.prog_name
+    return _BRANDING.ui_title or (prog[:1].upper() + prog[1:])
 
 
 # Burr UI deep links: /project/<project>/<partition_key>/<app_id>.
