@@ -42,3 +42,4 @@ scratch/
 mutants/
 .mutmut-cache
 .gl-report.json
+.analysis/

@@ -55,6 +55,7 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -260,8 +261,11 @@ async def _run_subprocess(cmd: list[str]) -> tuple[int, str, str]:
 
 async def _run_bandit(target: Path) -> dict[str, Any]:
     """Run bandit and return parsed JSON. Bandit exits 1 with findings."""
+    # Invoke through the current interpreter, not `uv run`: uv discovers its
+    # project from the cwd, so a harness running tests from a copied tree
+    # (e.g. mutmut's mutants/) would sync a phantom project instead.
     rc, stdout, stderr = await _run_subprocess(
-        ["uv", "run", "bandit", "-r", str(target), "-f", "json", "--quiet"]
+        [sys.executable, "-m", "bandit", "-r", str(target), "-f", "json", "--quiet"]
     )
     if rc >= 2:
         raise ValueError(f"bandit exited with code {rc}: {stderr[:300]}")
@@ -274,7 +278,7 @@ async def _run_bandit(target: Path) -> dict[str, Any]:
 async def _run_detect_secrets(target: Path) -> dict[str, Any]:
     """Run detect-secrets and return parsed JSON."""
     rc, stdout, stderr = await _run_subprocess(
-        ["uv", "run", "detect-secrets", "scan", str(target), "--all-files"]
+        [sys.executable, "-m", "detect_secrets", "scan", str(target), "--all-files"]
     )
     if rc >= 2:
         raise ValueError(f"detect-secrets exited with code {rc}: {stderr[:300]}")

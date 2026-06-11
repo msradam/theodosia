@@ -147,4 +147,17 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
 # Not a CI gate (too slow per PR); expand paths_to_mutate as coverage hardens.
 [tool.mutmut]
 paths_to_mutate = ["src/theodosia/ledger.py"]
-tests_dir = ["tests/"]
+# Only the ledger-focused tests: they are the intended mutation killers, and
+# they run thread-free. The full suite leaves live server/executor threads
+# behind after mutmut's in-process stats run, and forking a threaded process
+# segfaults mutmut's workers on macOS.
+tests_dir = [
+    "tests/test_ledger.py",
+    "tests/test_property_ledger.py",
+    "tests/test_v042_features.py",
+]
+# mutmut copies only paths_to_mutate into mutants/, which leaves a broken
+# partial `theodosia` namespace package that shadows the installed one; copy
+# the whole package so the mutated module imports alongside its siblings,
+# and examples/ because conftest.py puts it on sys.path for the test FSMs.
+also_copy = ["src/theodosia/", "examples/"]
