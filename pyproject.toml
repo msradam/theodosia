@@ -147,14 +147,14 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
 # Not a CI gate (too slow per PR); expand paths_to_mutate as coverage hardens.
 [tool.mutmut]
 paths_to_mutate = ["src/theodosia/ledger.py"]
-# Only the ledger-focused tests: they are the intended mutation killers, and
-# they run thread-free. The full suite leaves live server/executor threads
-# behind after mutmut's in-process stats run, and forking a threaded process
-# segfaults mutmut's workers on macOS.
+# Only the thread-free ledger tests: they are the intended mutation killers.
+# Anything that opens a FastMCP client (test_ledger.py's end-to-end cases,
+# the CLI runners) leaves live threads behind after mutmut's in-process
+# stats run, and forking a threaded process segfaults mutmut's workers on
+# macOS.
 tests_dir = [
-    "tests/test_ledger.py",
+    "tests/test_ledger_chain.py",
     "tests/test_property_ledger.py",
-    "tests/test_v042_features.py",
 ]
 # mutmut copies only paths_to_mutate into mutants/, which leaves a broken
 # partial `theodosia` namespace package that shadows the installed one; copy

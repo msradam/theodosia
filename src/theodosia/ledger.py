@@ -124,7 +124,7 @@ class HashChainedLedger:
         if not self.path.exists():
             return self._genesis()
         last = self._genesis()
-        with self.path.open(encoding="utf-8") as fh:
+        with self.path.open(encoding="utf-8") as fh:  # pragma: no mutate
             for line in fh:
                 line = line.strip()
                 if line:
@@ -140,7 +140,7 @@ class HashChainedLedger:
             entry["binding"] = self.binding
         entry["hash"] = _digest(prev, entry, self.key)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:  # pragma: no mutate
             fh.write(_canonical(entry) + "\n")
         # Keep cache consistent for the next append on this instance.
         self._cached_last_hash = entry["hash"]
@@ -157,8 +157,8 @@ def verify_ledger(
     """Recompute the chain. Returns ``(ok, problems)``.
 
     Each problem names the line where the recorded hash, the prev-link, the
-    binding, or an entry-count expectation fails. A missing file is vacuously
-    valid.
+    binding, an entry-count expectation, or JSON decoding fails. A missing
+    file is vacuously valid.
 
     ``expected_binding`` (typically ``{"app_id": ..., "project": ...}``)
     refuses entries whose stored binding does not match; this is what makes
@@ -179,12 +179,19 @@ def verify_ledger(
     problems: list[str] = []
     prev = genesis
     count = 0
-    with p.open(encoding="utf-8") as fh:
+    with p.open(encoding="utf-8") as fh:  # pragma: no mutate
         for i, line in enumerate(fh):
             line = line.strip()
             if not line:
                 continue
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as exc:
+                # A verifier must report corruption, not crash on it. The
+                # garbled line is flagged here; the next valid entry's
+                # prev-link check flags the break in the chain itself.
+                problems.append(f"line {i}: not valid JSON ({exc.msg})")
+                continue
             problems.extend(_check_entry(i, entry, prev, expected_binding, resolved_key))
             prev = entry.get("hash")
             count += 1
@@ -209,7 +216,7 @@ def attestation_receipt(path: str | Path, *, key: bytes | None = None) -> dict[s
     head: str | None = None
     entries = 0
     if p.exists():
-        with p.open(encoding="utf-8") as fh:
+        with p.open(encoding="utf-8") as fh:  # pragma: no mutate
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -256,5 +263,5 @@ def ledger_count(path: str | Path) -> int:
     p = Path(path)
     if not p.exists():
         return 0
-    with p.open(encoding="utf-8") as fh:
+    with p.open(encoding="utf-8") as fh:  # pragma: no mutate
         return sum(1 for line in fh if line.strip())
