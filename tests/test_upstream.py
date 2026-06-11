@@ -123,3 +123,33 @@ async def test_action_calls_upstream_through_mounted_server():
         assert "error" not in out
         # The upstream call ran inside the action; its result is in state.
         assert out["state"]["pods"] == ["api-aa", "api-bb"]
+
+
+@pytest.mark.asyncio
+async def test_upstream_tool_error_carries_structured_fields(tmp_path):
+    """UpstreamManager.call wraps tool errors as UpstreamError with
+    server/tool/body populated (ISSUE-015)."""
+    from fastmcp import FastMCP
+
+    failing = FastMCP("failing-upstream")
+
+    @failing.tool
+    def boom() -> str:
+        raise ValueError("the upstream exploded: code=E42")
+
+    mgr = UpstreamManager({"flaky": failing})
+    try:
+        with pytest.raises(UpstreamError) as excinfo:
+            await mgr.call("flaky", "boom", {})
+    finally:
+        await mgr.aclose()
+    err = excinfo.value
+    assert err.server == "flaky"
+    assert err.tool == "boom"
+    assert err.body and "E42" in err.body
+    assert "flaky" in str(err) and "boom" in str(err)
+
+
+def test_upstream_error_binding_failures_have_no_fields():
+    err = UpstreamError("no manager bound")
+    assert err.server is None and err.tool is None and err.body is None

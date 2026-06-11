@@ -270,6 +270,18 @@ def _check_graph_topology(app: Application[Any]) -> list[CheckResult]:
                 details=[f"terminal: {name}" for name in terminals],
             )
         )
+    else:
+        # A graph with no terminal is legitimate (long-lived sessions cycle
+        # forever), but worth surfacing: an agent driving it will never see
+        # an empty valid-next set, so "done" must come from the client side.
+        results.append(
+            CheckResult(
+                "Terminal actions",
+                CheckStatus.INFO,
+                "no terminal actions: every action has an outgoing transition "
+                "(the FSM cycles; sessions end by client disconnect or reset_session)",
+            )
+        )
     return results
 
 

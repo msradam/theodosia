@@ -18,7 +18,27 @@ _UPSTREAM: ContextVar[Any | None] = ContextVar("theodosia_upstream", default=Non
 
 
 class UpstreamError(RuntimeError):
-    """An upstream call failed or no manager/server was available."""
+    """An upstream call failed or no manager/server was available.
+
+    When the failure came from a named upstream tool call, ``server``,
+    ``tool``, and ``body`` carry the upstream server name, the tool name,
+    and the upstream error body so action code can branch on them without
+    parsing the message string. All three are ``None`` for binding-level
+    failures (no manager bound, unknown server name).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server: str | None = None,
+        tool: str | None = None,
+        body: Any = None,
+    ) -> None:
+        super().__init__(message)
+        self.server = server
+        self.tool = tool
+        self.body = body
 
 
 # ── Classified upstream responses ─────────────────────────────────────────
@@ -263,9 +283,23 @@ class UpstreamManager:
         return client
 
     async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
+        from fastmcp.exceptions import ToolError
+
         async with self._lock:
             client = await self._client(server)
-            result = await client.call_tool(tool, args)
+            try:
+                result = await client.call_tool(tool, args)
+            except ToolError as exc:
+                # Surface the upstream's error body structurally; without
+                # this an action sees only the exception type, writes
+                # incomplete state, and the ledger records a misleading
+                # entry.
+                raise UpstreamError(
+                    f"upstream {server!r} tool {tool!r} returned an error: {exc}",
+                    server=server,
+                    tool=tool,
+                    body=str(exc),
+                ) from exc
         return _extract(result)
 
     async def aclose(self) -> None:

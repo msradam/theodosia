@@ -390,3 +390,29 @@ def test_doctor_warns_on_sync_action_with_persister(tmp_path):
     assert any("Sync action bodies with persister" in t for t in warn_titles), (
         f"expected the sync-actions WARN to fire; got: {warn_titles}"
     )
+
+
+def test_no_terminal_actions_is_surfaced_as_info():
+    """A cyclic graph (no terminal) gets an INFO finding, not silence (ISSUE-015)."""
+
+    @action(reads=[], writes=["n"])
+    def ping(state: State) -> State:
+        return state.update(n=1)
+
+    @action(reads=["n"], writes=["n"])
+    def pong(state: State) -> State:
+        return state.update(n=state["n"] + 1)
+
+    app = (
+        ApplicationBuilder()
+        .with_actions(ping=ping, pong=pong)
+        .with_transitions(("ping", "pong"), ("pong", "ping"))
+        .with_state(n=0)
+        .with_entrypoint("ping")
+        .build()
+    )
+    report = run_checks(app)
+    terminal_checks = [c for c in report.checks if c.name == "Terminal actions"]
+    assert len(terminal_checks) == 1
+    assert terminal_checks[0].status is CheckStatus.INFO
+    assert "no terminal actions" in terminal_checks[0].message
