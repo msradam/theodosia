@@ -1,0 +1,2564 @@
+[
+  {
+    "complexity": 1,
+    "file_name": "__init__.py",
+    "function_name": "_resolve_version",
+    "path": "theodosia/__init__.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "__init__.py",
+    "function_name": "tracker",
+    "path": "theodosia/__init__.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 9,
+    "file_name": "_coercion.py",
+    "function_name": "_expects_object_or_array",
+    "path": "theodosia/_coercion.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 20,
+    "file_name": "_coercion.py",
+    "function_name": "_build_coercion_middleware",
+    "path": "theodosia/_coercion.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 20,
+        "estimated_complexity_after": 11,
+        "estimated_reduction": 9,
+        "kind": "extract_helper",
+        "line_end": 107,
+        "line_start": 94,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 20,
+        "estimated_complexity_after": 16,
+        "estimated_reduction": 4,
+        "kind": "loop_guards",
+        "line_end": 107,
+        "line_start": 94,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "_exceptions.py",
+    "function_name": "ActionExecutionError::__init__",
+    "path": "theodosia/_exceptions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_exceptions.py",
+    "function_name": "ActionTimeoutError::__init__",
+    "path": "theodosia/_exceptions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_exceptions.py",
+    "function_name": "InvalidTransitionError::__init__",
+    "path": "theodosia/_exceptions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_exceptions.py",
+    "function_name": "ValidationFailed::__init__",
+    "path": "theodosia/_exceptions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "modes.py",
+    "function_name": "_DynamicRefusalMiddleware::__init__",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "modes.py",
+    "function_name": "_make_dynamic_refusal_middleware",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "modes.py",
+    "function_name": "_run_action_bare",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "modes.py",
+    "function_name": "_refresh_global_dynamic_visibility",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "modes.py",
+    "function_name": "_refresh_session_dynamic_visibility",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "modes.py",
+    "function_name": "_DynamicRefusalMiddleware::on_call_tool",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 13,
+    "file_name": "modes.py",
+    "function_name": "_make_tool_handler",
+    "path": "theodosia/_experimental/modes.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_graph_summary.py",
+    "function_name": "_next_external_tools",
+    "path": "theodosia/_graph_summary.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_graph_summary.py",
+    "function_name": "_normalize_external_tools",
+    "path": "theodosia/_graph_summary.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 17,
+    "file_name": "_graph_summary.py",
+    "function_name": "_render_action_surface",
+    "path": "theodosia/_graph_summary.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 22,
+    "file_name": "_graph_summary.py",
+    "function_name": "_compute_graph_summary",
+    "path": "theodosia/_graph_summary.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 22,
+        "estimated_complexity_after": 17,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 153,
+        "line_start": 134,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 22,
+        "estimated_complexity_after": 20,
+        "estimated_reduction": 2,
+        "kind": "flatten_condition",
+        "line_end": 144,
+        "line_start": 143,
+        "steps": [
+          "invert the outer condition",
+          "return early when the condition fails",
+          "move the main success path one indentation level left",
+          "repeat for inner nested conditions where safe"
+        ],
+        "title": "Flatten nested condition block with guard clauses"
+      }
+    ]
+  },
+  {
+    "complexity": 2,
+    "file_name": "_hinting.py",
+    "function_name": "_auto_hint_success",
+    "path": "theodosia/_hinting.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_hinting.py",
+    "function_name": "_truncate_words",
+    "path": "theodosia/_hinting.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "_hinting.py",
+    "function_name": "_compose_next_hint",
+    "path": "theodosia/_hinting.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 12,
+    "file_name": "_hinting.py",
+    "function_name": "_auto_hint_refusal",
+    "path": "theodosia/_hinting.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_introspect.py",
+    "function_name": "_public_state",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_introspect.py",
+    "function_name": "_action_timeout",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_introspect.py",
+    "function_name": "_serializable_state",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_introspect.py",
+    "function_name": "_action_inputs",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "_introspect.py",
+    "function_name": "_pydantic_model_in_annotation",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 8,
+    "file_name": "_introspect.py",
+    "function_name": "valid_next_action_names",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 2,
+        "estimated_reduction": 6,
+        "kind": "extract_helper",
+        "line_end": 101,
+        "line_start": 92,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 101,
+        "line_start": 92,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 9,
+    "file_name": "_introspect.py",
+    "function_name": "_annotation_to_schema",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 12,
+    "file_name": "_introspect.py",
+    "function_name": "_coerce_pydantic_inputs",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 4,
+        "estimated_reduction": 8,
+        "kind": "extract_helper",
+        "line_end": 184,
+        "line_start": 161,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 184,
+        "line_start": 161,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 14,
+    "file_name": "_introspect.py",
+    "function_name": "_input_schemas",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 14,
+        "estimated_complexity_after": 6,
+        "estimated_reduction": 8,
+        "kind": "extract_helper",
+        "line_end": 244,
+        "line_start": 233,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 14,
+        "estimated_complexity_after": 10,
+        "estimated_reduction": 4,
+        "kind": "loop_guards",
+        "line_end": 244,
+        "line_start": 233,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 18,
+    "file_name": "_introspect.py",
+    "function_name": "_action_signature_params",
+    "path": "theodosia/_introspect.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 18,
+        "estimated_complexity_after": 12,
+        "estimated_reduction": 6,
+        "kind": "extract_helper",
+        "line_end": 304,
+        "line_start": 291,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 18,
+        "estimated_complexity_after": 15,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 304,
+        "line_start": 291,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "_ledger.py",
+    "function_name": "_ledger_binding",
+    "path": "theodosia/_ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_ledger.py",
+    "function_name": "_append_ledger",
+    "path": "theodosia/_ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_ledger.py",
+    "function_name": "_append_refusal_sidecar",
+    "path": "theodosia/_ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_ledger.py",
+    "function_name": "_warn_unkeyed_once",
+    "path": "theodosia/_ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::call",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::entries",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::save",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::server_names",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::__init__",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::aclose",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::consumed",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::from_file",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::remaining",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::reset",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::server_names",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::total",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "_Recorder::__init__",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_recording.py",
+    "function_name": "_Recorder::record",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::__init__",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_recording.py",
+    "function_name": "RecordingUpstream::aclose",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "_recording.py",
+    "function_name": "ReplayingUpstream::call",
+    "path": "theodosia/_recording.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_responses.py",
+    "function_name": "_step_tool_result",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_responses.py",
+    "function_name": "_emit_log",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_responses.py",
+    "function_name": "_has_local_tracker",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_responses.py",
+    "function_name": "_refusal_headline",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_responses.py",
+    "function_name": "_success_headline",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::__init__",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::__len__",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::history",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::_evict_if_full",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::_evict_stale",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_session.py",
+    "function_name": "_SessionStore::get_or_create",
+    "path": "theodosia/_session.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_step_schema.py",
+    "function_name": "_step_response_schema",
+    "path": "theodosia/_step_schema.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_tracker.py",
+    "function_name": "_tracker_project",
+    "path": "theodosia/_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_tracker.py",
+    "function_name": "_tracker_log_path",
+    "path": "theodosia/_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 8,
+    "file_name": "_tracker.py",
+    "function_name": "_read_trace",
+    "path": "theodosia/_tracker.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 3,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 92,
+        "line_start": 84,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 6,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 92,
+        "line_start": 85,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "_ui.py",
+    "function_name": "build_app",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_ui.py",
+    "function_name": "_bar_html",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_ui.py",
+    "function_name": "burr_credit_html",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_ui.py",
+    "function_name": "serve_themed",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_ui.py",
+    "function_name": "brand_identity",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_ui.py",
+    "function_name": "build_themed_assets",
+    "path": "theodosia/_ui.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "adapter.py",
+    "function_name": "_mount_from_assembly",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "adapter.py",
+    "function_name": "current_mcp_context",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "adapter.py",
+    "function_name": "_attach_hooks",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "adapter.py",
+    "function_name": "_resolve_assembly_workflow",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "adapter.py",
+    "function_name": "_warn_shared_app_mode",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "adapter.py",
+    "function_name": "_session_app_and_lock",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "adapter.py",
+    "function_name": "_restore_snapshot",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "adapter.py",
+    "function_name": "_action_validator",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "adapter.py",
+    "function_name": "_refusal_payload",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "adapter.py",
+    "function_name": "_resolve",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "adapter.py",
+    "function_name": "_run_validator",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "adapter.py",
+    "function_name": "_silence_fastmcp_loggers",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "adapter.py",
+    "function_name": "_build_persona_frame",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "adapter.py",
+    "function_name": "_race_with_timeout",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "adapter.py",
+    "function_name": "mount_multi",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 8,
+    "file_name": "adapter.py",
+    "function_name": "_record_history",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 11,
+    "file_name": "adapter.py",
+    "function_name": "_step_streaming_action",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 4,
+        "estimated_reduction": 7,
+        "kind": "extract_helper",
+        "line_end": 883,
+        "line_start": 861,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 878,
+        "line_start": 862,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      },
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 2,
+        "kind": "flatten_condition",
+        "line_end": 878,
+        "line_start": 864,
+        "steps": [
+          "invert the outer condition",
+          "return early when the condition fails",
+          "move the main success path one indentation level left",
+          "repeat for inner nested conditions where safe"
+        ],
+        "title": "Flatten nested condition block with guard clauses"
+      }
+    ]
+  },
+  {
+    "complexity": 12,
+    "file_name": "adapter.py",
+    "function_name": "spawn_subapp",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 4,
+        "estimated_reduction": 8,
+        "kind": "extract_helper",
+        "line_end": 402,
+        "line_start": 373,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 8,
+        "estimated_reduction": 4,
+        "kind": "loop_guards",
+        "line_end": 392,
+        "line_start": 381,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 20,
+    "file_name": "adapter.py",
+    "function_name": "_step_application",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 20,
+        "estimated_complexity_after": 10,
+        "estimated_reduction": 10,
+        "kind": "extract_helper",
+        "line_end": 818,
+        "line_start": 765,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 158,
+    "file_name": "adapter.py",
+    "function_name": "mount",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 158,
+        "estimated_complexity_after": 120,
+        "estimated_reduction": 38,
+        "kind": "extract_helper",
+        "line_end": 1753,
+        "line_start": 1534,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 158,
+        "estimated_complexity_after": 140,
+        "estimated_reduction": 18,
+        "kind": "extract_helper",
+        "line_end": 2176,
+        "line_start": 2084,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 158,
+        "estimated_complexity_after": 146,
+        "estimated_reduction": 12,
+        "kind": "extract_helper",
+        "line_end": 1963,
+        "line_start": 1909,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::from_dict",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::serve",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::to_dict",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::with_overrides",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::from_yaml",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 10,
+    "file_name": "assembly.py",
+    "function_name": "Assembly::to_yaml",
+    "path": "theodosia/assembly.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "__init__.py",
+    "function_name": "main",
+    "path": "theodosia/cli/__init__.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_app.py",
+    "function_name": "build_cli",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_app.py",
+    "function_name": "doctor",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_app.py",
+    "function_name": "ui",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_app.py",
+    "function_name": "_version_callback",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "_app.py",
+    "function_name": "_launch_vanilla_ui",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 9,
+    "file_name": "_app.py",
+    "function_name": "serve",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 9,
+        "estimated_complexity_after": 7,
+        "estimated_reduction": 2,
+        "kind": "split_dispatcher",
+        "line_end": 123,
+        "line_start": 112,
+        "steps": [
+          "create one handler per case",
+          "replace the chain with a dispatch table or small delegating match",
+          "keep the orchestration function shallow"
+        ],
+        "title": "Split conditional dispatcher into handlers"
+      }
+    ]
+  },
+  {
+    "complexity": 10,
+    "file_name": "_app.py",
+    "function_name": "run",
+    "path": "theodosia/cli/_app.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 10,
+        "estimated_complexity_after": 4,
+        "estimated_reduction": 6,
+        "kind": "extract_helper",
+        "line_end": 422,
+        "line_start": 401,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 1,
+    "file_name": "_branding.py",
+    "function_name": "_set_branding",
+    "path": "theodosia/cli/_branding.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_branding.py",
+    "function_name": "brand_display_name",
+    "path": "theodosia/cli/_branding.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_resolve.py",
+    "function_name": "_bail",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_resolve.py",
+    "function_name": "_looks_like_path",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_resolve.py",
+    "function_name": "_pick_default_app_id",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_resolve.py",
+    "function_name": "_pick_default_project",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_resolve.py",
+    "function_name": "_resolve_app_id_prefix",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_resolve.py",
+    "function_name": "_burr_ui_url",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_resolve.py",
+    "function_name": "_resolve_app",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_resolve.py",
+    "function_name": "_resolve_serve_target",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_resolve.py",
+    "function_name": "_locate_project_home",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_resolve.py",
+    "function_name": "_resolve_home",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 10,
+    "file_name": "_resolve.py",
+    "function_name": "_import_target",
+    "path": "theodosia/cli/_resolve.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_steps.py",
+    "function_name": "_duration_ms",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_steps.py",
+    "function_name": "_short_ts",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_steps.py",
+    "function_name": "_terminal_state_may_be_stale",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_steps.py",
+    "function_name": "_status_text",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_steps.py",
+    "function_name": "_exception_summary",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "_steps.py",
+    "function_name": "_state_diff_text",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_steps.py",
+    "function_name": "_short_value",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "_steps.py",
+    "function_name": "_relative_when",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "_steps.py",
+    "function_name": "_scan_app_entry",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 8,
+    "file_name": "_steps.py",
+    "function_name": "_read_refusals",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 3,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 57,
+        "line_start": 36,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 6,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 57,
+        "line_start": 37,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 11,
+    "file_name": "_steps.py",
+    "function_name": "_build_steps_table",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 31,
+    "file_name": "_steps.py",
+    "function_name": "_read_steps",
+    "path": "theodosia/cli/_steps.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 31,
+        "estimated_complexity_after": 20,
+        "estimated_reduction": 11,
+        "kind": "extract_helper",
+        "line_end": 108,
+        "line_start": 93,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 31,
+        "estimated_complexity_after": 27,
+        "estimated_reduction": 4,
+        "kind": "loop_guards",
+        "line_end": 108,
+        "line_start": 94,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      },
+      {
+        "current_complexity": 31,
+        "estimated_complexity_after": 29,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 120,
+        "line_start": 117,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "_topology.py",
+    "function_name": "_Topology::has_self_loop",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_topology.py",
+    "function_name": "_Topology::is_terminal",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_topology.py",
+    "function_name": "_Topology::out_edges",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_topology.py",
+    "function_name": "_session_progress",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_topology.py",
+    "function_name": "_condition_label",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_topology.py",
+    "function_name": "_graph_renderable",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_topology.py",
+    "function_name": "_topology",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_topology.py",
+    "function_name": "_graph_header",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_topology.py",
+    "function_name": "_graph_node_marker",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_topology.py",
+    "function_name": "_graph_node_name_style",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_topology.py",
+    "function_name": "_render_dot",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_topology.py",
+    "function_name": "_render_mermaid",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "_topology.py",
+    "function_name": "_graph_node_edges",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 7,
+        "estimated_complexity_after": 2,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 137,
+        "line_start": 132,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 7,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 137,
+        "line_start": 132,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 13,
+    "file_name": "_topology.py",
+    "function_name": "render",
+    "path": "theodosia/cli/_topology.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "reports.py",
+    "function_name": "_post_report",
+    "path": "theodosia/cli/reports.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "reports.py",
+    "function_name": "report",
+    "path": "theodosia/cli/reports.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 18,
+    "file_name": "reports.py",
+    "function_name": "_render_session_report",
+    "path": "theodosia/cli/reports.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 18,
+        "estimated_complexity_after": 13,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 175,
+        "line_start": 152,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "sessions.py",
+    "function_name": "_diff_state_dicts",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "sessions.py",
+    "function_name": "sessions_tail",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "sessions.py",
+    "function_name": "_build_sessions_table",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "sessions.py",
+    "function_name": "_collect_sessions_payload",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "sessions.py",
+    "function_name": "watch",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "sessions.py",
+    "function_name": "sessions_show",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "sessions.py",
+    "function_name": "_tail",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "sessions.py",
+    "function_name": "sessions_ls",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 16,
+    "file_name": "sessions.py",
+    "function_name": "logs",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 16,
+        "estimated_complexity_after": 14,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 492,
+        "line_start": 466,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 20,
+    "file_name": "sessions.py",
+    "function_name": "sessions_diff",
+    "path": "theodosia/cli/sessions.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 20,
+        "estimated_complexity_after": 11,
+        "estimated_reduction": 9,
+        "kind": "extract_helper",
+        "line_end": 306,
+        "line_start": 292,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 20,
+        "estimated_complexity_after": 18,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 299,
+        "line_start": 295,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 1,
+    "file_name": "status.py",
+    "function_name": "_print_status_header",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "status.py",
+    "function_name": "_collect_status_payload",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "status.py",
+    "function_name": "_print_status_empty_hint",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "status.py",
+    "function_name": "_theodosia_installed_version",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "status.py",
+    "function_name": "status",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "status.py",
+    "function_name": "_build_status_table",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "status.py",
+    "function_name": "_scan_project_latest",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 13,
+    "file_name": "status.py",
+    "function_name": "verify",
+    "path": "theodosia/cli/status.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "doctor.py",
+    "function_name": "DoctorReport::failed",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "doctor.py",
+    "function_name": "DoctorReport::info",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "doctor.py",
+    "function_name": "DoctorReport::ok",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "doctor.py",
+    "function_name": "DoctorReport::passed",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "doctor.py",
+    "function_name": "DoctorReport::warnings",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "doctor.py",
+    "function_name": "_check_ledger_key_mode",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "doctor.py",
+    "function_name": "_check_initial_state_usage",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "doctor.py",
+    "function_name": "run_checks",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "doctor.py",
+    "function_name": "_check_state_contract",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "doctor.py",
+    "function_name": "_resolve_application",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 11,
+    "file_name": "doctor.py",
+    "function_name": "_check_sync_actions_with_persister",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 384,
+        "line_start": 379,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 11,
+    "file_name": "doctor.py",
+    "function_name": "format_report",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 6,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 625,
+        "line_start": 613,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 11,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 625,
+        "line_start": 613,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 12,
+    "file_name": "doctor.py",
+    "function_name": "_check_graph_topology",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 7,
+        "kind": "extract_helper",
+        "line_end": 239,
+        "line_start": 232,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 239,
+        "line_start": 232,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      },
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 10,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 239,
+        "line_start": 237,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 34,
+    "file_name": "doctor.py",
+    "function_name": "_check_runtime",
+    "path": "theodosia/doctor.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 34,
+        "estimated_complexity_after": 12,
+        "estimated_reduction": 22,
+        "kind": "extract_helper",
+        "line_end": 577,
+        "line_start": 437,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "drive.py",
+    "function_name": "_mcp_tools_to_anthropic",
+    "path": "theodosia/drive.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "drive.py",
+    "function_name": "_default_anthropic_client",
+    "path": "theodosia/drive.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "drive.py",
+    "function_name": "_format_resource",
+    "path": "theodosia/drive.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 29,
+    "file_name": "drive.py",
+    "function_name": "drive_claude",
+    "path": "theodosia/drive.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 29,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 24,
+        "kind": "extract_helper",
+        "line_end": 215,
+        "line_start": 130,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 29,
+        "estimated_complexity_after": 19,
+        "estimated_reduction": 10,
+        "kind": "loop_guards",
+        "line_end": 209,
+        "line_start": 166,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      },
+      {
+        "current_complexity": 29,
+        "estimated_complexity_after": 26,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 198,
+        "line_start": 181,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 8,
+    "file_name": "importing.py",
+    "function_name": "_normalize_transitions",
+    "path": "theodosia/importing.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 3,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 206,
+        "line_start": 196,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 10,
+    "file_name": "importing.py",
+    "function_name": "burr_app_from_fastmcp",
+    "path": "theodosia/importing.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 10,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 263,
+        "line_start": 250,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 10,
+        "estimated_complexity_after": 8,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 263,
+        "line_start": 250,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 18,
+    "file_name": "importing.py",
+    "function_name": "_build_wrapper",
+    "path": "theodosia/importing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "ledger.py",
+    "function_name": "_canonical",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "ledger.py",
+    "function_name": "HashChainedLedger::__init__",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "ledger.py",
+    "function_name": "HashChainedLedger::_genesis",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "ledger.py",
+    "function_name": "HashChainedLedger::append",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "ledger.py",
+    "function_name": "_digest",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "ledger.py",
+    "function_name": "ledger_count",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "ledger.py",
+    "function_name": "_resolve_key",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "ledger.py",
+    "function_name": "_check_entry",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "ledger.py",
+    "function_name": "HashChainedLedger::_last_hash",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 7,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 131,
+        "line_start": 128,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 8,
+    "file_name": "ledger.py",
+    "function_name": "attestation_receipt",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 1,
+        "estimated_reduction": 7,
+        "kind": "extract_helper",
+        "line_end": 219,
+        "line_start": 211,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 3,
+        "kind": "loop_guards",
+        "line_end": 219,
+        "line_start": 213,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      },
+      {
+        "current_complexity": 8,
+        "estimated_complexity_after": 5,
+        "estimated_reduction": 3,
+        "kind": "flatten_condition",
+        "line_end": 216,
+        "line_start": 215,
+        "steps": [
+          "invert the outer condition",
+          "return early when the condition fails",
+          "move the main success path one indentation level left",
+          "repeat for inner nested conditions where safe"
+        ],
+        "title": "Flatten nested condition block with guard clauses"
+      }
+    ]
+  },
+  {
+    "complexity": 9,
+    "file_name": "ledger.py",
+    "function_name": "verify_ledger",
+    "path": "theodosia/ledger.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 9,
+        "estimated_complexity_after": 7,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 190,
+        "line_start": 183,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 1,
+    "file_name": "persona.py",
+    "function_name": "Persona::from_file",
+    "path": "theodosia/persona.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "persona.py",
+    "function_name": "Persona::to_prompt_text",
+    "path": "theodosia/persona.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 4,
+    "file_name": "persona.py",
+    "function_name": "resolve_default",
+    "path": "theodosia/persona.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 12,
+    "file_name": "persona.py",
+    "function_name": "Persona::from_text",
+    "path": "theodosia/persona.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 12,
+        "estimated_complexity_after": 7,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 133,
+        "line_start": 110,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      }
+    ]
+  },
+  {
+    "complexity": 13,
+    "file_name": "persona.py",
+    "function_name": "render_with_frame",
+    "path": "theodosia/persona.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 13,
+        "estimated_complexity_after": 11,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 77,
+        "line_start": 74,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 14,
+    "file_name": "persona.py",
+    "function_name": "load_personas",
+    "path": "theodosia/persona.py",
+    "refactor_plans": [
+      {
+        "current_complexity": 14,
+        "estimated_complexity_after": 9,
+        "estimated_reduction": 5,
+        "kind": "extract_helper",
+        "line_end": 202,
+        "line_start": 192,
+        "steps": [
+          "move the selected block into a private helper",
+          "pass required values as parameters",
+          "return the result/status needed by the caller"
+        ],
+        "title": "Extract complex block into helper function"
+      },
+      {
+        "current_complexity": 14,
+        "estimated_complexity_after": 12,
+        "estimated_reduction": 2,
+        "kind": "loop_guards",
+        "line_end": 201,
+        "line_start": 194,
+        "steps": [
+          "add negative condition checks at the top of the loop",
+          "use continue for skipped items",
+          "keep the main processing path unindented"
+        ],
+        "title": "Flatten loop body with continue guards"
+      }
+    ]
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_add_modifier",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_build_primer_application",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_cancel",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_diff_state",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_fulfill",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "primer.py",
+    "function_name": "_pay",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "primer.py",
+    "function_name": "_format_inputs",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "primer.py",
+    "function_name": "_take_order",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "primer.py",
+    "function_name": "primer",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 10,
+    "file_name": "primer.py",
+    "function_name": "_run",
+    "path": "theodosia/primer.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::__init__",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::aclose",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::calls",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::clear",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::register",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::server_names",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::calls_to",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 7,
+    "file_name": "testing.py",
+    "function_name": "FakeUpstream::call",
+    "path": "theodosia/testing.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "tokens.py",
+    "function_name": "as_python_dict",
+    "path": "theodosia/tokens.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "tokens.py",
+    "function_name": "as_css_variables",
+    "path": "theodosia/tokens.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "SourceResult::to_dict",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "SourceResult::usable",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "UpstreamManager::__init__",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "UpstreamManager::call",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "UpstreamManager::server_names",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "bind_upstream",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "coverage",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "upstream.py",
+    "function_name": "reset_upstream",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "upstream.py",
+    "function_name": "SourceResult::__post_init__",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "upstream.py",
+    "function_name": "call_upstream",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "upstream.py",
+    "function_name": "UpstreamManager::aclose",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "upstream.py",
+    "function_name": "_as_transport",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "upstream.py",
+    "function_name": "confidence_label",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "upstream.py",
+    "function_name": "safe_upstream",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "upstream.py",
+    "function_name": "UpstreamManager::_client",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 6,
+    "file_name": "upstream.py",
+    "function_name": "_nested_error",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 8,
+    "file_name": "upstream.py",
+    "function_name": "_extract",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 11,
+    "file_name": "upstream.py",
+    "function_name": "classify_payload",
+    "path": "theodosia/upstream.py",
+    "refactor_plans": []
+  }
+]

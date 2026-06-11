@@ -36,22 +36,27 @@ class Assembly:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def serve(self, **overrides: Any) -> FastMCP:
+        """Mount this assembly as a FastMCP server; kwargs override fields."""
         from theodosia.adapter import mount
 
         return mount(self, **overrides)
 
     def with_overrides(self, **overrides: Any) -> Assembly:
+        """Return a copy of this assembly with the given fields replaced."""
         return replace(self, **overrides)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the assembly to a plain dict (dataclass fields as-is)."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Assembly:
+        """Build an assembly from a ``to_dict``-shaped mapping."""
         return cls(**data)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> Assembly:
+        """Load an assembly from a YAML mapping file."""
         import yaml
 
         data = yaml.safe_load(Path(path).expanduser().read_text(encoding="utf-8"))

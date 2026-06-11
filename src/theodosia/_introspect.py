@@ -35,8 +35,9 @@ def _public_state(state_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def _serializable_state(state_dict: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Return a JSON-serialisable copy of ``state_dict`` plus a list of
-    keys whose values had to be stringified.
+    """Return a JSON-serialisable copy of ``state_dict``, noting lossy keys.
+
+    The second element lists the keys whose values had to be stringified.
 
     Burr lets actions put anything in state (numpy arrays, connection
     objects, Pydantic models, callables). The wire format is JSON, so we

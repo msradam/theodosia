@@ -110,6 +110,8 @@ def _warn_shared_app_mode() -> None:
 
 
 class ServingMode(str, Enum):  # noqa: UP042  # (str, Enum) for stable wire serialization
+    """How a mounted Application is exposed; ``STEP`` is the only mode."""
+
     STEP = "step"
     # ``TOOLS`` (one MCP tool per @action, no enforcement) and ``DYNAMIC``
     # (per-session ``tools/list_changed`` visibility) were carved out into
@@ -859,8 +861,7 @@ async def _step_streaming_action(
     ctx: Context | None,
     timeout_seconds: float | None,
 ) -> dict[str, Any]:
-    """Run a streaming Burr action and surface chunks as MCP progress
-    notifications.
+    """Run a streaming Burr action, surfacing chunks as MCP progress.
 
     Burr streaming actions yield intermediate chunks plus a final
     state. We forward each chunk to the client via
@@ -1543,6 +1544,8 @@ def _register_step_tool(
                 form. A JSON-encoded string is also accepted (some
                 clients serialize nested object arguments that way)
                 and is parsed into an object before dispatch.
+            ctx: Server-injected FastMCP request context; never supplied
+                by the client.
         """
         # Coerce a JSON-string inputs into a dict so the body always
         # sees the canonical shape.
@@ -2593,8 +2596,11 @@ def mount_multi(
         instructions: Server-level instructions for the parent. The
             per-app instructions (with the auto-described action
             surface) remain on each sub-server.
-        session_ttl_seconds, max_sessions, action_timeout_seconds:
-            Forwarded to each sub-application's ``mount()`` call.
+        session_ttl_seconds: Forwarded to each sub-application's
+            ``mount()`` call.
+        max_sessions: Forwarded to each sub-application's ``mount()`` call.
+        action_timeout_seconds: Forwarded to each sub-application's
+            ``mount()`` call.
         hooks: Burr ``LifecycleAdapter`` instances forwarded to each
             sub-application's ``mount()`` call. Attached to every
             sub-application's sessions; if you need per-app hooks, mount

@@ -144,6 +144,7 @@ class Persona:
 
     @classmethod
     def from_file(cls, path: Path | str) -> Persona:
+        """Parse one PERSONA.md file; the stem becomes the fallback name."""
         path = Path(path).expanduser()
         if not path.exists():
             raise FileNotFoundError(f"persona file not found: {path}")

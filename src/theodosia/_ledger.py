@@ -89,8 +89,9 @@ _LEDGER_CACHE_LOCK = threading.Lock()
 
 
 def _append_ledger(app: Application[Any], record: dict[str, Any]) -> None:
-    """Chain one attempt (step or refusal) onto the session's hash-chained
-    ledger, next to the tracker log.
+    """Chain one attempt (step or refusal) onto the session's ledger.
+
+    The hash-chained ledger lives next to the tracker log.
 
     Unlike ``refusals.jsonl`` (refusals only, for ``theodosia logs --refusals``),
     the ledger covers every attempt and is hash-chained, so ``theodosia verify``
@@ -120,8 +121,10 @@ def _append_ledger(app: Application[Any], record: dict[str, Any]) -> None:
 
 
 def _append_refusal_sidecar(app: Application[Any], record: dict[str, Any]) -> None:
-    """Persist a refusal next to the Burr tracker log, so the durable audit
-    trail includes blocked transitions, not just executed steps.
+    """Persist a refusal next to the Burr tracker log.
+
+    This keeps blocked transitions in the durable audit trail, not just
+    executed steps.
 
     Burr's ``LocalTrackingClient`` only logs actions that ran, so an
     ``invalid_transition`` (the graph blocking an out-of-order call) never

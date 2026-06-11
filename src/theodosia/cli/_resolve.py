@@ -85,7 +85,7 @@ def _resolve_serve_target(target: str | None, app_dir: list[str]) -> tuple[Any, 
 
 
 def _resolve_home(home: Path | None) -> Path:
-    """Tracker storage root, in resolution-priority order:
+    """Tracker storage root, in resolution-priority order.
 
     1. Explicit ``--home`` flag (per invocation).
     2. ``THEODOSIA_HOME`` env var (per process / per deployment).

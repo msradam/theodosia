@@ -118,8 +118,10 @@ def _render_action_surface(app: Application[Any]) -> str:
 def _normalize_external_tools(
     external_tools: dict[str, list[str]] | None, app: Application[Any]
 ) -> dict[str, list[str]]:
-    """Keep only entries whose action name exists in the graph. Warn on
-    unknowns rather than failing, so a typo is recoverable."""
+    """Keep only entries whose action name exists in the graph.
+
+    Warns on unknowns rather than failing, so a typo is recoverable.
+    """
     if not external_tools:
         return {}
     known = {a.name for a in app.graph.actions}

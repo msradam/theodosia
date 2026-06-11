@@ -71,7 +71,7 @@ def _build_coercion_middleware() -> Any:
     from fastmcp.server.middleware import Middleware as _Mw
 
     class _CoerceJsonStringInputs(_Mw):
-        """Coerce JSON-string values to objects/arrays when the schema asks.
+        r"""Coerce JSON-string values to objects/arrays when the schema asks.
 
         Some MCP clients serialize nested object arguments as JSON strings
         (e.g. sending ``"inputs": "{\\"item\\": \\"mocha\\"}"`` instead of

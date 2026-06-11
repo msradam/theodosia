@@ -222,7 +222,7 @@ def ui(
 
 
 def _launch_vanilla_ui(*, host: str, port: int, no_open: bool, storage_dir: Path) -> None:
-    """Burr's stock UI, scoped to ``storage_dir`` via the ``burr_path`` env var.
+    r"""Burr's stock UI, scoped to ``storage_dir`` via the ``burr_path`` env var.
 
     Prefers a local apache-burr\\[start] (one process); otherwise shells out to
     ``uvx --from 'apache-burr\\[start]'``.

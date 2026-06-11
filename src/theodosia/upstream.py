@@ -27,7 +27,7 @@ class UpstreamError(RuntimeError):
     failures (no manager bound, unknown server name).
     """
 
-    def __init__(
+    def __init__(  # noqa: D107  # the class docstring documents the fields
         self,
         message: str,
         *,
@@ -71,6 +71,7 @@ class SourceResult:
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Reject statuses outside the OK/ERROR/MALFORMED wire vocabulary."""
         if self.status not in _STATUS_VALUES:
             raise ValueError(
                 f"SourceResult.status must be one of {sorted(_STATUS_VALUES)}; got {self.status!r}"
@@ -82,6 +83,7 @@ class SourceResult:
         return self.status == OK
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize for the wire: name, status, data, detail, meta."""
         return {
             "name": self.name,
             "status": self.status,
@@ -174,6 +176,7 @@ def bind_upstream(manager: Any) -> Token[Any | None]:
 
 
 def reset_upstream(token: Token[Any | None]) -> None:
+    """Restore the upstream binding captured by ``bind_upstream``."""
     _UPSTREAM.reset(token)
 
 
@@ -246,13 +249,15 @@ def _as_transport(config: Any) -> Any:
 class UpstreamManager:
     """Lazily opens and caches one ``fastmcp.Client`` session per upstream server."""
 
-    def __init__(self, configs: dict[str, Any]):
+    def __init__(self, configs: dict[str, Any]) -> None:
+        """Copy ``{server: transport-config-or-Client-target}`` for lazy opening."""
         self._configs = configs.copy()
         self._clients: dict[str, Any] = {}
         self._lock = asyncio.Lock()
 
     @property
     def server_names(self) -> list[str]:
+        """Configured upstream server names, sorted."""
         return sorted(self._configs)
 
     async def _client(self, server: str) -> Any:
@@ -283,6 +288,7 @@ class UpstreamManager:
         return client
 
     async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
+        """Call ``tool`` on ``server``; raises ``UpstreamError`` on tool errors."""
         from fastmcp.exceptions import ToolError
 
         async with self._lock:
@@ -303,6 +309,7 @@ class UpstreamManager:
         return _extract(result)
 
     async def aclose(self) -> None:
+        """Close every opened upstream client session."""
         async with self._lock:
             for client in self._clients.values():
                 with contextlib.suppress(Exception):

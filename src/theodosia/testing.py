@@ -50,6 +50,7 @@ class FakeUpstream:
         self,
         responses: dict[str, dict[str, ToolResponse]] | None = None,
     ) -> None:
+        """Map ``{server: {tool: response-or-callable}}`` to canned replies."""
         self._responses: dict[str, dict[str, ToolResponse]] = {
             server: tools.copy() for server, tools in (responses or {}).items()
         }
@@ -63,6 +64,7 @@ class FakeUpstream:
 
     @property
     def server_names(self) -> list[str]:
+        """Configured fake server names, sorted."""
         return sorted(self._responses)
 
     def calls_to(self, server: str, tool: str | None = None) -> list[FakeCall]:

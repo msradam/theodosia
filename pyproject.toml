@@ -108,14 +108,40 @@ src = ["src"]
 extend-exclude = ["examples/data"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF", "PERF", "PIE", "RET", "FURB"]
+select = [
+    "E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF", "PERF", "PIE", "RET",
+    "FURB",
+    "D",    # docstring presence + google style (see [tool.ruff.lint.pydocstyle])
+    "ANN",  # annotation completeness; backs the mypy --strict baseline at lint speed
+    "ERA",  # no commented-out code
+]
+# ANN401: the adapter's Any at Burr/FastMCP boundaries is the documented
+# reality `ignore_missing_imports` exists for; banning Any would force
+# fictional annotations on third-party objects.
+ignore = ["ANN401"]
 # Brand glyphs: ⊢ (turnstile, allowed) and × (multiplication, refused) are
 # Theodosia's wire-shape markers. Ruff's ambiguous-Unicode lint flags them as
 # look-alikes; that ambiguity is the point of using them as glyphs.
 allowed-confusables = ["×", "⊢"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E402"]
+# Test prose and example walkthroughs are not API docs; annotation pressure
+# there hurts readability without adding safety (mypy doesn't check them).
+# ERA001 false-positives on prose section comments ("# FSM: gating") and
+# documentation sketches, which tests and examples use heavily; it stays
+# enforced for src/.
+"tests/**/*.py" = ["E402", "D", "ANN", "ERA"]
+"examples/**/*.py" = ["D", "ANN", "ERA"]
+"bench/**/*.py" = ["D", "ANN", "ERA"]
+"demos/**/*.py" = ["D", "ANN", "ERA"]
+"scripts/**/*.py" = ["D", "ANN"]
+# _experimental is excluded from the audit standards wholesale (see its
+# README); it keeps the baseline ruleset only.
+"src/theodosia/_experimental/**" = ["D", "ANN"]
+"vulture_whitelist.py" = ["B018", "F821"]
 
 [tool.ruff.format]
 quote-style = "double"

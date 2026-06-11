@@ -52,10 +52,12 @@ def _canonical(entry: dict[str, Any]) -> str:
 
 
 def _resolve_key(explicit: bytes | None) -> bytes | None:
-    """Return the HMAC key from ``explicit`` or the ``THEODOSIA_LEDGER_KEY`` env
-    var. The env var must be hex-encoded; a non-hex value raises ``ValueError``
+    """Return the HMAC key from ``explicit`` or ``THEODOSIA_LEDGER_KEY``.
+
+    The env var must be hex-encoded; a non-hex value raises ``ValueError``
     so a typo cannot silently produce a different chain than the operator
-    intended. ``None`` means plain SHA256."""
+    intended. ``None`` means plain SHA256.
+    """
     if explicit is not None:
         return explicit
     env = os.environ.get("THEODOSIA_LEDGER_KEY")
@@ -105,7 +107,8 @@ class HashChainedLedger:
         binding: dict[str, Any] | None = None,
         key: bytes | None = None,
         last_hash: str | None = None,
-    ):
+    ) -> None:
+        """Bind the ledger to ``path``; see the class docstring for kwargs."""
         self.path = Path(path)
         self.binding = dict(binding or {})
         self.key = _resolve_key(key)
@@ -132,8 +135,10 @@ class HashChainedLedger:
         return last
 
     def append(self, event: dict[str, Any]) -> dict[str, Any]:
-        """Chain ``event`` onto the ledger and return the written entry
-        (the event plus its ``prev``, ``binding``, and ``hash``)."""
+        """Chain ``event`` onto the ledger and return the written entry.
+
+        The entry is the event plus its ``prev``, ``binding``, and ``hash``.
+        """
         prev = self._last_hash()
         entry = event | {"prev": prev}
         if self.binding:

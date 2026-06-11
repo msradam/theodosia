@@ -35,6 +35,8 @@ _INTERNAL_STATE_KEYS = frozenset({"__SEQUENCE_ID", "__PRIOR_STEP"})
 
 
 class CheckStatus(str, Enum):  # noqa: UP042  # match adapter.ServingMode convention
+    """Severity of one doctor finding; only FAIL blocks ``DoctorReport.ok``."""
+
     PASS = "pass"
     FAIL = "fail"
     WARN = "warn"
@@ -58,28 +60,36 @@ class CheckResult:
 
 @dataclass
 class DoctorReport:
+    """The doctor's findings: one ``CheckResult`` per check, plus tallies."""
+
     checks: list[CheckResult] = field(default_factory=list)
 
     @property
     def passed(self) -> int:
+        """Count of PASS findings."""
         return sum(1 for c in self.checks if c.status == CheckStatus.PASS)
 
     @property
     def failed(self) -> int:
+        """Count of FAIL findings."""
         return sum(1 for c in self.checks if c.status == CheckStatus.FAIL)
 
     @property
     def warnings(self) -> int:
+        """Count of WARN findings."""
         return sum(1 for c in self.checks if c.status == CheckStatus.WARN)
 
     @property
     def info(self) -> int:
+        """Count of INFO findings."""
         return sum(1 for c in self.checks if c.status == CheckStatus.INFO)
 
     @property
     def ok(self) -> bool:
-        """True if no failures. Warnings don't block; they're for the
-        author's eyes."""
+        """True if no failures.
+
+        Warnings don't block; they're for the author's eyes.
+        """
         return self.failed == 0
 
 
@@ -286,8 +296,7 @@ def _check_graph_topology(app: Application[Any]) -> list[CheckResult]:
 
 
 def _check_state_contract(app: Application[Any]) -> list[CheckResult]:
-    """Every key an action reads must be writable by some action or
-    seeded in ``with_state(...)``.
+    """Check every read state key has a writer or a ``with_state`` seed.
 
     Otherwise the first read yields ``None`` (or KeyError, depending on
     how the action is written), which is almost always a bug. Reported

@@ -1,5 +1,7 @@
-"""Exception types raised inside ``_step_application`` and translated into
-structured MCP refusals at the wire boundary.
+"""Exceptions raised inside ``_step_application``, refusal-shaped on the wire.
+
+Each type here is translated into a structured MCP refusal at the wire
+boundary rather than propagating to the client as a protocol error.
 
 Re-exported from :mod:`theodosia.adapter` for backwards compatibility with
 downstream code that imports from there directly. New code can import

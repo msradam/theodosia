@@ -68,8 +68,10 @@ _BRANDING = _Branding()
 
 
 def _set_branding(branding: _Branding) -> None:
-    """Mutate the singleton in place so every module's ``from … import _BRANDING``
-    reference stays valid. Rebinding instead of mutating would leave consumers
+    """Mutate the branding singleton in place rather than rebinding it.
+
+    Mutation keeps every module's ``from … import _BRANDING`` reference
+    valid. Rebinding instead of mutating would leave consumers
     (each ``cli`` submodule imports ``_BRANDING`` once at import time) holding
     the stale instance, which is the multi-module analogue of the bug that
     ``global _BRANDING; _BRANDING = …`` papered over when the CLI was one file.
@@ -79,8 +81,9 @@ def _set_branding(branding: _Branding) -> None:
 
 
 def brand_display_name() -> str:
-    """The brand's display name: ``ui_title`` if set, else the capitalized
-    program name. Used for the themed-UI bar and the session-console footers
+    """The brand's display name: ``ui_title`` if set, else the program name.
+
+    Used for the themed-UI bar and the session-console footers
     so a rebranded CLI points users at *its* console, not a generic one.
     """
     prog = _BRANDING.prog_name

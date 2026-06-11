@@ -25,8 +25,9 @@ from theodosia.cli._steps import _read_steps, _relative_when
 
 
 def _theodosia_installed_version() -> str:
-    """Resolve the version of the *running* CLI's package, falling back to
-    Theodosia. Honors ``build_cli(prog_name=...)`` so a rebranded
+    """Resolve the version of the *running* CLI's package.
+
+    Falls back to Theodosia's own version. Honors ``build_cli(prog_name=...)`` so a rebranded
     ``my-fsm status`` reports ``my-fsm <version>``.
     """
     from importlib.metadata import PackageNotFoundError

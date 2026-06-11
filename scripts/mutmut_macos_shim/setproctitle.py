@@ -11,7 +11,7 @@ Linux (including CI) does not need the shim.
 """
 
 
-def setproctitle(title):  # noqa: ARG001  (signature mirrors the real module)
+def setproctitle(title):  # signature mirrors the real module
     return None
 
 

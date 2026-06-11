@@ -9,4 +9,4 @@ exist despite being "unused".
 # FastAPI binds the `/{rest_of_path:path}` catch-all route through this
 # parameter name; the handler ignores the value by design (it always serves
 # the patched index.html and lets React Router take over).
-rest_of_path  # noqa: F821, B018  # unused variable (src/theodosia/_ui.py:349)
+rest_of_path  # unused variable (src/theodosia/_ui.py:349)
