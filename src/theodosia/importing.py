@@ -109,15 +109,15 @@ class ToolSpec:
     state_update: Callable[[Any], dict[str, Any]] | None = None
     rename: str | None = None
     timeout_seconds: float | None = None
-    validator: Callable[[dict, dict], dict | None] | None = None
+    validator: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None
 
 
 def _build_wrapper(
-    tool_fn: Callable,
+    tool_fn: Callable[..., Any],
     tool_name: str,
     tool_doc: str | None,
     spec: ToolSpec,
-):
+) -> Callable[..., Any]:
     """Wrap a FastMCP tool function as a Burr-compatible action.
 
     The wrapper has the original tool's parameters plus a leading
@@ -141,7 +141,7 @@ def _build_wrapper(
     is_async = asyncio.iscoroutinefunction(tool_fn)
     writes_set = set(spec.writes)
 
-    def _apply_result(state: State, result: Any) -> State:
+    def _apply_result(state: State[Any], result: Any) -> State[Any]:
         if spec.state_update is not None:
             update = spec.state_update(result) or {}
             return state.update(**update) if update else state
@@ -152,13 +152,13 @@ def _build_wrapper(
 
     if is_async:
 
-        async def wrapper(state: State, **kwargs: Any) -> State:
+        async def wrapper(state: State[Any], **kwargs: Any) -> State[Any]:
             result = await tool_fn(**kwargs)
             return _apply_result(state, result)
 
     else:
 
-        def wrapper(state: State, **kwargs: Any) -> State:  # type: ignore[misc]
+        def wrapper(state: State[Any], **kwargs: Any) -> State[Any]:  # type: ignore[misc]
             result = tool_fn(**kwargs)
             return _apply_result(state, result)
 
@@ -192,7 +192,7 @@ def _normalize_transitions(
     ``Condition.expr(...)`` for convenience so users don't have to
     import ``Condition`` themselves.
     """
-    out: list = []
+    out: list[Any] = []
     for t in transitions or []:
         if len(t) == 2:
             src, dst = t
@@ -213,9 +213,9 @@ async def burr_app_from_fastmcp(
     entrypoint: str,
     initial_state: dict[str, Any] | None = None,
     tool_specs: dict[str, ToolSpec] | None = None,
-    transitions: list | None = None,
+    transitions: list[Any] | None = None,
     only: list[str] | None = None,
-) -> Application:
+) -> Application[Any]:
     """Lift a FastMCP server into a Burr Application.
 
     Args:
@@ -269,8 +269,8 @@ async def burr_app_from_fastmcp(
 
     normalized_transitions = _normalize_transitions(transitions, rename_map)
 
-    builder: ApplicationBuilder = (
-        ApplicationBuilder()
+    builder: ApplicationBuilder[Any] = (
+        ApplicationBuilder()  # type: ignore[no-untyped-call]  # Burr ships no __init__ stub
         .with_actions(**burr_actions)
         .with_state(**initial_state)
         .with_entrypoint(entrypoint)

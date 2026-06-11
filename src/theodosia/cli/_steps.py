@@ -73,7 +73,7 @@ def _terminal_state_may_be_stale(steps: list[StepRow]) -> bool:
     raw = getattr(last, "state_raw", None)
     if raw is None:
         return False
-    return raw.get("__PRIOR_STEP") != last.action
+    return bool(raw.get("__PRIOR_STEP") != last.action)
 
 
 def _read_steps(log_path: Path) -> list[StepRow]:
@@ -86,8 +86,8 @@ def _read_steps(log_path: Path) -> list[StepRow]:
     forward for the entry whose ``__PRIOR_STEP`` does match. That entry's
     state is the true post-step state for this row.
     """
-    begins: dict[int, dict] = {}
-    ends: dict[int, dict] = {}
+    begins: dict[int, dict[str, Any]] = {}
+    ends: dict[int, dict[str, Any]] = {}
     if not log_path.exists():
         return []
     with log_path.open() as f:

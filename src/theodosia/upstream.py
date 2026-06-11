@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -146,12 +146,12 @@ def confidence_label(usable: int, total: int) -> str:
     return "full"
 
 
-def bind_upstream(manager: Any):
+def bind_upstream(manager: Any) -> Token[Any | None]:
     """Bind an upstream manager for the current context; returns the reset token."""
     return _UPSTREAM.set(manager)
 
 
-def reset_upstream(token) -> None:
+def reset_upstream(token: Token[Any | None]) -> None:
     _UPSTREAM.reset(token)
 
 
@@ -233,7 +233,7 @@ class UpstreamManager:
     def server_names(self) -> list[str]:
         return sorted(self._configs)
 
-    async def _client(self, server: str):
+    async def _client(self, server: str) -> Any:
         if server in self._clients:
             return self._clients[server]
         if server not in self._configs:
@@ -244,7 +244,7 @@ class UpstreamManager:
 
         client = Client(_as_transport(self._configs[server]))
         try:
-            await client.__aenter__()
+            await client.__aenter__()  # type: ignore[no-untyped-call]  # fastmcp.Client ships no __aenter__ stub
         except RuntimeError as exc:
             if "fileno" in str(exc):
                 raise UpstreamError(

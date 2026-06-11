@@ -151,7 +151,7 @@ def _check_ledger_key_mode() -> list[CheckResult]:
     ]
 
 
-def _resolve_application(application: Any, report: DoctorReport) -> Application | None:
+def _resolve_application(application: Any, report: DoctorReport) -> Application[Any] | None:
     """Coax ``application`` into a concrete ``burr.core.Application``.
 
     Accepts: an Application instance, or a callable returning one.
@@ -207,7 +207,7 @@ def _resolve_application(application: Any, report: DoctorReport) -> Application 
     return None
 
 
-def _check_graph_topology(app: Application) -> list[CheckResult]:
+def _check_graph_topology(app: Application[Any]) -> list[CheckResult]:
     """Reachability + dead-end detection.
 
     Two findings:
@@ -271,7 +271,7 @@ def _check_graph_topology(app: Application) -> list[CheckResult]:
     return results
 
 
-def _check_state_contract(app: Application) -> list[CheckResult]:
+def _check_state_contract(app: Application[Any]) -> list[CheckResult]:
     """Every key an action reads must be writable by some action or
     seeded in ``with_state(...)``.
 
@@ -310,7 +310,7 @@ def _check_state_contract(app: Application) -> list[CheckResult]:
     ]
 
 
-def _check_initial_state_usage(app: Application) -> list[CheckResult]:
+def _check_initial_state_usage(app: Application[Any]) -> list[CheckResult]:
     """Flag initial-state keys nothing reads AND nothing writes.
 
     A key that's seeded then written-but-never-read is part of the
@@ -344,7 +344,9 @@ def _check_initial_state_usage(app: Application) -> list[CheckResult]:
     ]
 
 
-def _check_sync_actions_with_persister(application: Any, app: Application) -> list[CheckResult]:
+def _check_sync_actions_with_persister(
+    application: Any, app: Application[Any]
+) -> list[CheckResult]:
     """Warn when sync action bodies coexist with a persister or tracker.
 
     Burr's ``post_run_step`` hook fires with pre-action state when the
@@ -404,7 +406,7 @@ def _check_sync_actions_with_persister(application: Any, app: Application) -> li
     ]
 
 
-def _check_runtime(application: Any, app: Application) -> list[CheckResult]:
+def _check_runtime(application: Any, app: Application[Any]) -> list[CheckResult]:
     """Mount the server in-process and probe its wire shape.
 
     Verifies the four-tool surface, the ResourcesAsTools transform tools,

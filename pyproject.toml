@@ -122,6 +122,9 @@ quote-style = "double"
 
 [tool.mypy]
 python_version = "3.11"
+strict = true
+# Burr and FastMCP ship incomplete stubs; keep this so strict mode checks
+# OUR annotations without inventing errors at third-party boundaries.
 ignore_missing_imports = true
 exclude = ["_experimental/"]
 

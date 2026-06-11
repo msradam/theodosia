@@ -18,7 +18,7 @@ from typing import Any
 
 from burr.core import Application
 
-ApplicationFactory = Callable[[], Application]
+ApplicationFactory = Callable[[], Application[Any]]
 
 _DEFAULT_SESSION_TTL_SECONDS = 3600  # 1 hour idle
 _DEFAULT_MAX_SESSIONS = 100
@@ -49,7 +49,7 @@ class _SessionEntry:
     "subrun X had the following timeline."
     """
 
-    application: Application | None
+    application: Application[Any] | None
     history: list[dict[str, Any]] = field(default_factory=list)
     subruns: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_access: float = field(default_factory=time.monotonic)

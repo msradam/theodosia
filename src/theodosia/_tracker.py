@@ -23,7 +23,7 @@ from burr.core import Application
 _TRACE_MAX_ENTRIES = 1000
 
 
-def _tracker_project(app: Application) -> str | None:
+def _tracker_project(app: Application[Any]) -> str | None:
     """Return the LocalTrackingClient project name, or None.
 
     Surfaced on every step/fork meta-tool response so even collapsed
@@ -40,7 +40,7 @@ def _tracker_project(app: Application) -> str | None:
     return tracker.project_id
 
 
-def _tracker_log_path(app: Application) -> Path | None:
+def _tracker_log_path(app: Application[Any]) -> Path | None:
     """Locate the on-disk log file for this Application's Burr tracker.
 
     Reads ``app._tracker`` which is Burr's internal slot for the

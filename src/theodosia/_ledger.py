@@ -61,7 +61,7 @@ def _warn_unkeyed_once() -> None:
         )
 
 
-def _ledger_binding(app: Application, log_path: Path) -> dict[str, Any]:
+def _ledger_binding(app: Application[Any], log_path: Path) -> dict[str, Any]:
     """Identity fields hashed into every ledger entry.
 
     Embedding these in the chain means copying ``ledger.jsonl`` between
@@ -88,7 +88,7 @@ _LEDGER_LAST_HASH: dict[str, str | None] = {}
 _LEDGER_CACHE_LOCK = threading.Lock()
 
 
-def _append_ledger(app: Application, record: dict[str, Any]) -> None:
+def _append_ledger(app: Application[Any], record: dict[str, Any]) -> None:
     """Chain one attempt (step or refusal) onto the session's hash-chained
     ledger, next to the tracker log.
 
@@ -119,7 +119,7 @@ def _append_ledger(app: Application, record: dict[str, Any]) -> None:
         _LOG.warning("theodosia ledger append failed at %s: %s", ledger_path, exc)
 
 
-def _append_refusal_sidecar(app: Application, record: dict[str, Any]) -> None:
+def _append_refusal_sidecar(app: Application[Any], record: dict[str, Any]) -> None:
     """Persist a refusal next to the Burr tracker log, so the durable audit
     trail includes blocked transitions, not just executed steps.
 

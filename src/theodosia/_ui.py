@@ -20,6 +20,7 @@ import shutil
 import tempfile
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 from theodosia.tokens import LIGHT as _TOKENS
 from theodosia.tokens import as_css_variables as _to_css
@@ -314,7 +315,7 @@ def build_themed_assets(
     return dest
 
 
-def build_app(build_dir: Path):
+def build_app(build_dir: Path) -> Any:
     """Burr's API routes + the themed static assets, served at the root path.
 
     ``burr_path`` must already be set in the environment: importing
@@ -330,13 +331,13 @@ def build_app(build_dir: Path):
     index_html = (build_dir / "index.html").read_text()
 
     @app.get("/manifest.json")
-    async def manifest_json():
+    async def manifest_json() -> Any:
         return FileResponse(
             str(build_dir / "manifest.json"), media_type="application/manifest+json"
         )
 
     @app.get("/favicon.ico")
-    async def favicon():
+    async def favicon() -> Any:
         return FileResponse(str(build_dir / "favicon.ico"), media_type="image/x-icon")
 
     # Catch-all for client-side routes (/project/...): serve the patched index
@@ -345,7 +346,7 @@ def build_app(build_dir: Path):
     # resolve a function-local ``Request`` annotation and would treat it as a
     # query field. The handler doesn't need the request anyway.
     @app.get("/{rest_of_path:path}")
-    async def react_app(rest_of_path: str):
+    async def react_app(rest_of_path: str) -> Any:
         return HTMLResponse(index_html)
 
     return app

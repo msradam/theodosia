@@ -15,7 +15,7 @@ import asyncio
 import logging
 from typing import Any, Literal
 
-from burr.core import ApplicationBuilder, Condition, State, action
+from burr.core import Application, ApplicationBuilder, Condition, State, action
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -35,7 +35,7 @@ _REFUSAL_PROBE: tuple[str, dict[str, Any]] = ("take_order", {"item": "americano"
 
 
 @action(reads=[], writes=["stage", "item", "qty", "modifiers", "total"])
-def _take_order(state: State, item: str, qty: int = 1) -> State:
+def _take_order(state: State[Any], item: str, qty: int = 1) -> State[Any]:
     if qty < 1:
         raise ValueError(f"qty must be >= 1; got {qty}")
     return state.update(
@@ -49,9 +49,9 @@ def _take_order(state: State, item: str, qty: int = 1) -> State:
 
 @action(reads=["modifiers", "total"], writes=["modifiers", "total"])
 def _add_modifier(
-    state: State,
+    state: State[Any],
     modifier: Literal["extra_shot", "oat_milk", "syrup"],
-) -> State:
+) -> State[Any]:
     return state.update(
         modifiers=[*state["modifiers"], modifier],
         total=state["total"] + _MODIFIER_PRICE[modifier],
@@ -59,25 +59,25 @@ def _add_modifier(
 
 
 @action(reads=["stage"], writes=["stage", "paid_amount"])
-def _pay(state: State, amount: float) -> State:
+def _pay(state: State[Any], amount: float) -> State[Any]:
     return state.update(stage="paid", paid_amount=amount)
 
 
 @action(reads=["stage"], writes=["stage"])
-def _fulfill(state: State) -> State:
+def _fulfill(state: State[Any]) -> State[Any]:
     return state.update(stage="fulfilled")
 
 
 @action(reads=["stage"], writes=["stage"])
-def _cancel(state: State) -> State:
+def _cancel(state: State[Any]) -> State[Any]:
     return state.update(stage="cancelled")
 
 
-def _build_primer_application():
+def _build_primer_application() -> Application[Any]:
     ordered = Condition.expr("stage == 'ordered'")
     paid = Condition.expr("stage == 'paid'")
     return (
-        ApplicationBuilder()
+        ApplicationBuilder()  # type: ignore[no-untyped-call]  # Burr ships no __init__ stub
         .with_actions(
             take_order=_take_order,
             add_modifier=_add_modifier,

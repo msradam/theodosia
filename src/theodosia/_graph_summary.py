@@ -26,7 +26,7 @@ from burr.core import Application
 from theodosia._introspect import _action_inputs, _input_schemas
 
 
-def _render_action_surface(app: Application) -> str:
+def _render_action_surface(app: Application[Any]) -> str:
     """Render a compact text summary of the FSM's action + transition surface.
 
     Appended to the server's `instructions` so an MCP client sees the
@@ -62,7 +62,7 @@ def _render_action_surface(app: Application) -> str:
 
 
 def _normalize_external_tools(
-    external_tools: dict[str, list[str]] | None, app: Application
+    external_tools: dict[str, list[str]] | None, app: Application[Any]
 ) -> dict[str, list[str]]:
     """Keep only entries whose action name exists in the graph. Warn on
     unknowns rather than failing, so a typo is recoverable."""
@@ -95,7 +95,7 @@ def _next_external_tools(
 
 
 def _compute_graph_summary(
-    app: Application,
+    app: Application[Any],
     server_name: str,
     external_tools_map: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:

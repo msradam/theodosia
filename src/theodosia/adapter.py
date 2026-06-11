@@ -72,8 +72,8 @@ from fastmcp.tools.base import ToolResult
 
 from theodosia.upstream import UpstreamManager, bind_upstream, reset_upstream
 
-ApplicationFactory = Callable[[], Application]
-ApplicationOrFactory = Application | ApplicationFactory
+ApplicationFactory = Callable[[], Application[Any]]
+ApplicationOrFactory = Application[Any] | ApplicationFactory
 
 logger = logging.getLogger("theodosia")
 
@@ -159,7 +159,7 @@ def _restore_snapshot(
     last_action: str | None,
     sequence_id_override: int | None = None,
     kept_subruns: dict[str, Any] | None = None,
-) -> tuple[Application, dict[str, Any], list[str]]:
+) -> tuple[Application[Any], dict[str, Any], list[str]]:
     """Shared body for ``fork_at`` and ``fork_from_past``.
 
     Rebuilds the session's Application via the factory, overwrites its
@@ -324,7 +324,7 @@ def current_mcp_context() -> Context | None:
 
 
 async def spawn_subapp(
-    sub_application: Application,
+    sub_application: Application[Any],
     *,
     label: str | None = None,
     halt_after: list[str] | None = None,
@@ -411,8 +411,8 @@ _PER_ACTION_VALIDATOR_ATTR = "_theodosia_validator"
 
 def _action_validator(
     action: Action,
-    mount_overrides: dict[str, Callable] | None,
-) -> Callable | None:
+    mount_overrides: dict[str, Callable[..., Any]] | None,
+) -> Callable[..., Any] | None:
     """Return the input validator for ``action``, or None.
 
     A ``mount(input_validators={...})`` mapping wins over a
@@ -429,7 +429,7 @@ def _action_validator(
 
 
 async def _run_validator(
-    validator: Callable,
+    validator: Callable[..., Any],
     state_dict: dict[str, Any],
     inputs: dict[str, Any],
 ) -> dict[str, Any]:
@@ -454,7 +454,9 @@ async def _run_validator(
     return result
 
 
-def _resolve(application: ApplicationOrFactory) -> tuple[Application, ApplicationFactory | None]:
+def _resolve(
+    application: ApplicationOrFactory,
+) -> tuple[Application[Any], ApplicationFactory | None]:
     """Split ``application`` into a template instance + optional factory.
 
     The template is what mount-time introspection reads to register tools
@@ -502,7 +504,7 @@ def _record_history(
     error_message: str | None = None,
     error_type: str | None = None,
     subruns: list[str] | None = None,
-    app: Application | None = None,
+    app: Application[Any] | None = None,
 ) -> None:
     """Append one timeline entry to this session's history.
 
@@ -560,7 +562,7 @@ def _refusal_payload(
     *,
     exc: Exception,
     action_name: str,
-    app: Application,
+    app: Application[Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Convert a step-side exception into an MCP refusal payload + history kwargs.
 
@@ -661,11 +663,11 @@ from theodosia._hinting import (  # noqa: E402,F401
 
 def _session_app_and_lock(
     ctx: Context | None,
-    shared_app: Application,
+    shared_app: Application[Any],
     shared_lock: asyncio.Lock,
     factory: ApplicationFactory | None,
     store: _SessionStore,
-) -> tuple[Application, asyncio.Lock, _SessionEntry | None]:
+) -> tuple[Application[Any], asyncio.Lock, _SessionEntry | None]:
     """Resolve the ``(Application, lock, session_entry)`` for this request.
 
     Shared-app mode (factory is None): returns ``shared_app`` plus the
@@ -719,11 +721,11 @@ async def _race_with_timeout(coro: typing.Awaitable[Any], timeout_seconds: float
 
 
 async def _step_application(
-    app: Application,
+    app: Application[Any],
     action_name: str,
     inputs: dict[str, Any],
     timeout_seconds: float | None = None,
-    validator: Callable | None = None,
+    validator: Callable[..., Any] | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Run one step of the Application.
@@ -795,13 +797,14 @@ async def _step_application(
             if timeout_seconds is not None and is_sync_body:
 
                 def _thread_runner() -> tuple[Any, Any, Any]:
-                    return asyncio.run(app.astep(inputs=inputs))  # type: ignore[return-value,misc]
+                    # astep returns None only before the first step; unreachable here.
+                    return asyncio.run(app.astep(inputs=inputs))  # type: ignore[return-value]
 
                 a, result, new_state = await _race_with_timeout(
                     asyncio.to_thread(_thread_runner), timeout_seconds
                 )
             elif timeout_seconds is not None:
-                a, result, new_state = await _race_with_timeout(  # type: ignore[misc]
+                a, result, new_state = await _race_with_timeout(
                     app.astep(inputs=inputs), timeout_seconds
                 )
             else:
@@ -831,7 +834,7 @@ async def _step_application(
 
 async def _step_streaming_action(
     *,
-    app: Application,
+    app: Application[Any],
     action_name: str,
     inputs: dict[str, Any],
     ctx: Context | None,
@@ -907,7 +910,7 @@ from theodosia._responses import (  # noqa: E402
 )
 
 
-def _attach_hooks(app: Application, hooks: list[Any]) -> None:
+def _attach_hooks(app: Application[Any], hooks: list[Any]) -> None:
     """Append Burr lifecycle adapters to an already-built ``Application``.
 
     Burr's ``ApplicationBuilder.with_hooks(*)`` is the normal path; this
@@ -987,7 +990,7 @@ def mount(
     session_ttl_seconds: int | None = _DEFAULT_SESSION_TTL_SECONDS,
     max_sessions: int | None = _DEFAULT_MAX_SESSIONS,
     action_timeout_seconds: float | None = None,
-    input_validators: dict[str, Callable] | None = None,
+    input_validators: dict[str, Callable[..., Any]] | None = None,
     state_loader: Any | None = None,
     next_hint: Callable[..., str | None] | None = None,
     external_tools: dict[str, list[str]] | None = None,
@@ -1151,7 +1154,7 @@ def mount(
         if factory is not None:
             original_factory = factory
 
-            def factory_with_hooks() -> Application:
+            def factory_with_hooks() -> Application[Any]:
                 app_inst = original_factory()
                 _attach_hooks(app_inst, hooks)
                 return app_inst
@@ -1520,10 +1523,10 @@ def mount(
             _name = f"theodosia/persona/{_persona.name}"
             _desc = _persona.description or f"Persona: {_persona.name}"
 
-            def _make_prompt_fn(persona_obj):
+            def _make_prompt_fn(persona_obj: Any) -> Callable[[Context], Any]:
                 async def _persona_prompt_fn(ctx: Context) -> str:
                     frame = _build_persona_frame(ctx, store, factory)
-                    return persona_obj.to_prompt_text(frame=frame)
+                    return str(persona_obj.to_prompt_text(frame=frame))
 
                 return _persona_prompt_fn
 

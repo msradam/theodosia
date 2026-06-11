@@ -59,7 +59,7 @@ def _refusal_headline(seq: int, action: str, refusal_reason: str, detail: str = 
     return f"Step {seq}: {action} × {refusal_reason}{tail}"
 
 
-def _has_local_tracker(app: Application) -> bool:
+def _has_local_tracker(app: Application[Any]) -> bool:
     try:
         from burr.tracking.client import LocalTrackingClient
     except ImportError:

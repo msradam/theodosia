@@ -412,7 +412,7 @@ def run(cli: typer.Typer, argv: list[str] | None = None) -> int:
         # carry ``show()`` and ``exit_code`` but share no common static type.
         exc: Any = e
         exc.show()
-        return exc.exit_code
+        return int(exc.exit_code)
     except SystemExit as e:
         if e.code is None:
             return 0

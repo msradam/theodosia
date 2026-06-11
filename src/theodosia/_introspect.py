@@ -77,7 +77,7 @@ def _action_timeout(action: Action, server_default: float | None) -> float | Non
     return server_default
 
 
-def valid_next_action_names(app: Application) -> list[str]:
+def valid_next_action_names(app: Application[Any]) -> list[str]:
     """Names of actions reachable from the current state.
 
     For a non-branching graph this is a list of one. For a branching

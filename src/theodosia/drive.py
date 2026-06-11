@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
@@ -120,6 +120,7 @@ async def drive_claude(
     environment (``ANTHROPIC_API_KEY``), raising a theodosia-level error that
     points at the no-key Agent-SDK path if the SDK or key is missing.
     """
+    from anthropic.types import ToolUseBlock
     from fastmcp import Client
 
     if anthropic is None:
@@ -164,15 +165,18 @@ async def drive_claude(
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
 
         for _ in range(max_turns):
+            # The SDK's params are TypedDicts; the transcript keeps plain
+            # wire dicts (and feeds response blocks straight back), so the
+            # call site casts rather than re-shaping every block.
             response = await anthropic.messages.create(
                 model=model,
                 max_tokens=max_output_tokens,
                 system=system_prompt,
-                tools=tools,
-                messages=messages,
+                tools=cast("Any", tools),
+                messages=cast("Any", messages),
             )
             messages.append({"role": "assistant", "content": response.content})
-            tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+            tool_uses = [b for b in response.content if isinstance(b, ToolUseBlock)]
             if not tool_uses:
                 transcript["stopped_on"] = "text_only"
                 break

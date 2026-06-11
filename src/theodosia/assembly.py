@@ -25,7 +25,7 @@ class Assembly:
     """
 
     name: str
-    workflow: Application | Callable[[], Application] | str
+    workflow: Application[Any] | Callable[[], Application[Any]] | str
     version: str = "0.1.0"
     personas: PersonaSource = None
     default_persona: str | None = None
@@ -88,7 +88,7 @@ class Assembly:
                 f"callables and 'module:attr' import strings round-trip. Replace the "
                 f"built Application with its factory."
             )
-        text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+        text: str = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
         if path is not None:
             Path(path).expanduser().write_text(text, encoding="utf-8")
         return text

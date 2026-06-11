@@ -36,7 +36,7 @@ def _expects_object_or_array(prop_schema: dict[str, Any]) -> bool:
     return False
 
 
-def _build_coercion_middleware():
+def _build_coercion_middleware() -> Any:
     """Build the JSON-string-to-object coercion middleware.
 
     Lazily imports the FastMCP Middleware base so this module doesn't pay
@@ -74,7 +74,7 @@ def _build_coercion_middleware():
                 out[tool.name] = schema.get("properties", {}) or {}
             return out
 
-        async def on_call_tool(self, context, call_next):
+        async def on_call_tool(self, context: Any, call_next: Any) -> Any:
             msg = context.message
             args = getattr(msg, "arguments", None)
             if not args:

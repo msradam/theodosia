@@ -14,9 +14,11 @@ the ``ServingMode`` enum keeps ``STEP`` as its only member so callers
 passing ``mode=ServingMode.STEP`` keep working.
 """
 
+from typing import Any
+
+from theodosia._exceptions import ValidationFailed
 from theodosia.adapter import (
     ServingMode,
-    ValidationFailed,
     current_mcp_context,
     mount,
     mount_multi,
@@ -56,7 +58,7 @@ def _resolve_version() -> str:
 __version__ = _resolve_version()
 
 
-def tracker(project: str, storage_dir: str | None = None, **kwargs):
+def tracker(project: str, storage_dir: str | None = None, **kwargs: Any) -> Any:
     """A Burr ``LocalTrackingClient`` that defaults its store to ``~/.theodosia``.
 
     Use this in your builder (``.with_tracker(theodosia.tracker("my-project"))``)
