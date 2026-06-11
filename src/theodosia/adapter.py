@@ -978,6 +978,1146 @@ def _silence_fastmcp_loggers() -> None:
             _lg.setLevel(logging.WARNING)
 
 
+def _subruns_index(entry: _SessionEntry) -> list[dict[str, Any]]:
+    """Build the ``theodosia://subruns`` index for one session entry."""
+    # Reverse-map subrun_id -> the parent history entry that spawned it.
+    parent_action_for: dict[str, str] = {}
+    for h in entry.history:
+        for sid in h.get("subruns", []) or []:
+            parent_action_for[sid] = h["action"]
+    return [
+        {
+            "id": sid,
+            "uri": f"theodosia://subruns/{sid}",
+            "label": record.get("label"),
+            "started_ts": record.get("started_ts"),
+            "ended_ts": record.get("ended_ts"),
+            "parent_action": parent_action_for.get(sid),
+            "error": record.get("error"),
+        }
+        for sid, record in entry.subruns.items()
+    ]
+
+
+def _session_coordinates(app: Application[Any]) -> dict[str, Any]:
+    """Build the ``theodosia://session`` payload: tracker coordinates.
+
+    ``project`` and ``app_dir`` are null when no ``LocalTrackingClient``
+    is attached; ``app_id`` and ``partition_key`` are always populated
+    because they live on the Application directly.
+    """
+    project: str | None = None
+    app_dir: str | None = None
+    try:
+        from burr.tracking.client import LocalTrackingClient
+    except ImportError:
+        LocalTrackingClient = None  # type: ignore[assignment,misc]
+    tracker = getattr(app, "_tracker", None)
+    if LocalTrackingClient is not None and isinstance(tracker, LocalTrackingClient):
+        project = tracker.project_id
+        try:
+            storage_dir = Path(tracker.storage_dir).expanduser().resolve()
+            app_dir = str((storage_dir / app.uid).resolve())
+        except (OSError, AttributeError):
+            app_dir = None
+    return {
+        "project": project,
+        "app_id": app.uid,
+        "app_dir": app_dir,
+        "partition_key": getattr(app, "_partition_key", None),
+    }
+
+
+def _register_resources(
+    mcp: FastMCP,
+    *,
+    store: _SessionStore,
+    shared_app: Application[Any],
+    shared_lock: asyncio.Lock,
+    factory: ApplicationFactory | None,
+    graph_summary_json: str,
+) -> None:
+    """Register the ``theodosia://`` read-only resource surface on ``mcp``."""
+
+    @mcp.resource("theodosia://graph")
+    async def _graph_resource() -> str:
+        """Static description of the Application's FSM topology.
+
+        Read once per session. The graph doesn't change after mount;
+        a model that has this resource doesn't need to keep polling
+        ``theodosia://next`` to plan ahead. Each tool response already
+        carries the current state and the valid next actions, so
+        runtime polling is only useful for forensic inspection of an
+        already-running session.
+
+        Shape:
+
+            {
+              "name": "<server name>",
+              "entrypoint": "<starting action>",
+              "actions": [
+                {"name", "description", "reads", "writes",
+                 "required_inputs", "optional_inputs"}, ...
+              ],
+              "transitions": [
+                {"from", "to", "condition": "<expr or null>"}, ...
+              ]
+            }
+        """
+        return graph_summary_json
+
+    @mcp.resource("theodosia://state")
+    async def _state_resource(ctx: Context) -> str:
+        """Current Application state as JSON.
+
+        Internal Burr keys (``__PRIOR_STEP``, ``__SEQUENCE_ID``) are
+        filtered. Non-JSON-representable values are coerced to strings,
+        with the affected keys listed under ``_theodosia.coerced_keys``
+        so the client knows the round-trip is lossy.
+        """
+        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        state, coerced = _serializable_state(_public_state(app.state.get_all()))
+        if coerced:
+            state["_theodosia"] = {"coerced_keys": coerced}
+        return json.dumps(state, indent=2)
+
+    @mcp.resource("theodosia://next")
+    async def _next_resource(ctx: Context) -> str:
+        """Action names reachable from the current state.
+
+        For non-branching graphs this is one name. For branching graphs,
+        all conditionally-reachable next actions are listed. After a
+        terminal action this is an empty list, meaning the FSM is done.
+        """
+        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        return json.dumps(valid_next_action_names(app))
+
+    @mcp.resource("theodosia://history")
+    async def _history_resource(ctx: Context) -> str:
+        """Timeline of every action attempted in this session.
+
+        The payload is a JSON array (no wrapper object) of entries each
+        carrying ``seq``, ``ts``, ``action``, ``inputs``, ``state_after``,
+        ``valid_next_actions``, ``refused``, and ``refusal_reason``. Both
+        successful steps and refused attempts (invalid transitions, unknown
+        actions) appear. In factory-mode deployments each session sees only
+        its own history; in shared-app deployments each session sees the
+        timeline of its own calls against the shared FSM.
+        """
+        history = store.history(ctx.session_id) if ctx is not None else []
+        return json.dumps(history, default=str, indent=2)
+
+    @mcp.resource("theodosia://subruns")
+    async def _subruns_resource(ctx: Context) -> str:
+        """Index of sub-Application runs spawned in this session.
+
+        Each entry has ``id``, ``uri``, ``label``, ``started_ts``,
+        ``ended_ts``, and the ``parent_action`` that spawned it. The
+        ``uri`` field is the fully-rendered ``theodosia://subruns/{id}``
+        address, ready to read without constructing it from a template.
+        Empty list if no actions in this session called
+        ``spawn_subapp``.
+        """
+        if ctx is None:
+            return json.dumps([])
+        entry = store.get_or_create(ctx.session_id, factory)
+        return json.dumps(_subruns_index(entry), default=str, indent=2)
+
+    @mcp.resource("theodosia://subruns/{subrun_id}")
+    async def _subrun_detail_resource(subrun_id: str, ctx: Context) -> str:
+        """Full record for one sub-Application run.
+
+        Includes the sub-run's id, label, parent-spawning timestamps,
+        in-memory history of the sub-graph's steps, final public
+        state, and any error that aborted the run. Returns
+        ``{"error": "unknown_subrun"}`` if the id isn't known to this
+        session.
+        """
+        if ctx is None:
+            return json.dumps({"error": "no_session"})
+        entry = store.get_or_create(ctx.session_id, factory)
+        record = entry.subruns.get(subrun_id)
+        if record is None:
+            return json.dumps(
+                {
+                    "error": "unknown_subrun",
+                    "subrun_id": subrun_id,
+                    "known_subruns": list(entry.subruns),
+                },
+                indent=2,
+            )
+        return json.dumps(record, default=str, indent=2)
+
+    @mcp.resource("theodosia://trace")
+    async def _trace_resource(ctx: Context) -> str:
+        """Burr's on-disk LocalTrackingClient log for this session's Application.
+
+        Returns the JSONL records Burr writes for every action step
+        (action enter/exit, state diff, timing). The Application must
+        have been built with ``.with_tracker(LocalTrackingClient(...))``
+        for this resource to return data; otherwise the response is
+        ``{"error": "no_tracker", "message": "..."}``.
+
+        Responses are capped at the most recent 1000 records to keep
+        the wire payload bounded. For full traces, read the log file
+        directly off disk at the path Burr's tracker writes to.
+
+        This is the cross-reference between theodosia's in-memory
+        ``theodosia://history`` (one entry per attempted action, including
+        refusals) and Burr's own structured trace format (one entry
+        per state transition, full Burr replay shape).
+        """
+        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        path = _tracker_log_path(app)
+        if path is None:
+            return json.dumps(
+                {
+                    "error": "no_tracker",
+                    "message": (
+                        "This Application has no LocalTrackingClient attached. "
+                        "Pass tracker=LocalTrackingClient(project='...') to "
+                        "ApplicationBuilder.with_tracker(...) when building "
+                        "the Application to enable theodosia://trace."
+                    ),
+                },
+                indent=2,
+            )
+        if not path.exists():
+            return json.dumps([])
+        return json.dumps(_read_trace(path), default=str, indent=2)
+
+    @mcp.resource("theodosia://session")
+    async def _session_resource(ctx: Context) -> str:
+        """Tracker coordinates for the current MCP session's Application.
+
+        Returns ``{project, app_id, app_dir, partition_key}`` so a client
+        (or the agent itself) can locate this session's tracker data on
+        disk without guessing. Useful for terminal tooling like
+        ``theodosia watch <project>`` that tails the LocalTrackingClient
+        JSONL, and for any out-of-band inspection of
+        ``~/.burr/<project>/<app-id>/log.jsonl``.
+
+        ``project`` and ``app_dir`` are null when no
+        ``LocalTrackingClient`` is attached; ``app_id`` and
+        ``partition_key`` are always populated because they live on the
+        Application directly.
+        """
+        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        return json.dumps(_session_coordinates(app), indent=2)
+
+
+def _register_personas(
+    mcp: FastMCP,
+    *,
+    personas_map: dict[str, Any],
+    persona: Any | None,
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+) -> None:
+    """Register persona resources and one MCP prompt per persona."""
+    if not personas_map:
+        return
+    if personas_map:
+
+        @mcp.resource("theodosia://personas")
+        async def _personas_resource() -> str:
+            """Index of personas mounted on this server.
+
+            Returns ``{name: {description, voice, has_metadata}}`` so a client
+            can list available identities without fetching every body. Each
+            persona is also registered as an MCP prompt named
+            ``theodosia/persona/<name>``; ``prompts/get`` returns the body.
+            """
+            return json.dumps(
+                {
+                    p.name: {
+                        "description": p.description,
+                        "voice": p.voice,
+                        "has_metadata": bool(p.metadata),
+                    }
+                    for p in personas_map.values()
+                },
+                indent=2,
+            )
+
+        if persona is not None:
+            default_name = persona.name
+
+            @mcp.resource("theodosia://persona")
+            async def _active_persona_resource() -> str:
+                """The persona currently active for this server.
+
+                Whichever persona was chosen at mount time via
+                ``default_persona=`` (or, if not specified, the lexically
+                first persona in the loaded directory).
+                """
+                p = personas_map[default_name]
+                return json.dumps(
+                    {
+                        "name": p.name,
+                        "description": p.description,
+                        "voice": p.voice,
+                        "body": p.body,
+                        "metadata": p.metadata,
+                    },
+                    indent=2,
+                )
+
+        # Each persona becomes an MCP prompt. ``ctx: Context`` is the
+        # FastMCP convention for server-injected context (without the
+        # annotation it would be advertised as a required client argument).
+        # When a session is active the body is interpolated against the
+        # current frame; unknown placeholders render as empty strings.
+        for _persona in personas_map.values():
+            _name = f"theodosia/persona/{_persona.name}"
+            _desc = _persona.description or f"Persona: {_persona.name}"
+
+            def _make_prompt_fn(persona_obj: Any) -> Callable[[Context], Any]:
+                async def _persona_prompt_fn(ctx: Context) -> str:
+                    frame = _build_persona_frame(ctx, store, factory)
+                    return str(persona_obj.to_prompt_text(frame=frame))
+
+                return _persona_prompt_fn
+
+            mcp.prompt(name=_name, description=_desc)(_make_prompt_fn(_persona))
+
+
+def _with_next_guidance(
+    response: dict[str, Any],
+    *,
+    state: dict[str, Any],
+    valid_next: list[str],
+    last_action: str,
+    refusal: dict[str, Any] | None,
+    next_hint: Callable[..., str | None] | None,
+    external_tools_map: dict[str, list[str]],
+) -> dict[str, Any]:
+    """Append ``next_hint`` and ``next_external_tools`` to a step response.
+
+    Every step outcome (success, refusal, unknown action) carries the same
+    two guidance fields; this is the single place they are composed.
+    """
+    hint = _compose_next_hint(
+        state=state,
+        valid_next=valid_next,
+        last_action=last_action,
+        refusal=refusal,
+        domain_callback=next_hint,
+    )
+    if hint:
+        response = response | {"next_hint": hint}
+    if external_tools_map:
+        net = _next_external_tools(external_tools_map, valid_next)
+        if net:
+            response = response | {"next_external_tools": net}
+    return response
+
+
+async def _handle_unknown_action(
+    *,
+    action: str,
+    inputs: dict[str, Any] | None,
+    seq: int,
+    ctx: Context | None,
+    store: _SessionStore,
+    shared_app: Application[Any],
+    shared_lock: asyncio.Lock,
+    factory: ApplicationFactory | None,
+    action_names: list[str],
+    next_hint: Callable[..., str | None] | None,
+    external_tools_map: dict[str, list[str]],
+) -> ToolResult:
+    """Refuse a hallucinated action name with self-correcting guidance.
+
+    A hallucinated action name is the refusal a weaker model is most
+    likely to hit. Steer it the same way an invalid_transition does:
+    resolve the session's current Application, report what's reachable
+    now, and run the reactive-hint path so the response is
+    self-correcting on its own. ``known_actions`` stays for spotting
+    typos.
+    """
+    app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+    valid = valid_next_action_names(app)
+    response: dict[str, Any] = {
+        "error": "unknown_action",
+        "requested": action,
+        "known_actions": action_names,
+        "valid_next_actions": valid,
+        "message": (
+            f"unknown action {action!r}. Reachable actions from the current state: {valid}."
+        ),
+    }
+    state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
+    response = _with_next_guidance(
+        response,
+        state=state_for_hint,
+        valid_next=valid,
+        last_action=action,
+        refusal=response,
+        next_hint=next_hint,
+        external_tools_map=external_tools_map,
+    )
+    _record_history(
+        store,
+        ctx,
+        factory,
+        action=action,
+        inputs=inputs or {},
+        state_after=None,
+        valid_next_actions=valid,
+        refused=True,
+        refusal_reason="unknown_action",
+        app=app,
+    )
+    headline = f"Step {seq}: {action} × unknown_action"
+    await _emit_log(ctx, headline)
+    return _step_tool_result(response, headline)
+
+
+def _register_step_tool(
+    mcp: FastMCP,
+    *,
+    store: _SessionStore,
+    shared_app: Application[Any],
+    shared_lock: asyncio.Lock,
+    factory: ApplicationFactory | None,
+    action_timeout_seconds: float | None,
+    input_validators: dict[str, Callable[..., Any]] | None,
+    upstream_manager: Any,
+    external_tools_map: dict[str, list[str]],
+    next_hint: Callable[..., str | None] | None,
+    action_surface: str,
+) -> None:
+    """Register ``step``, the single transition gate, on ``mcp``."""
+    action_names = [a.name for a in shared_app.graph.actions]
+    action_map = {a.name: a for a in shared_app.graph.actions}
+
+    async def step(
+        action: str,
+        inputs: dict[str, Any] | str | None = None,
+        ctx: Context | None = None,
+    ) -> ToolResult:
+        """Advance the FSM by one transition.
+
+        Args:
+            action: Name of the action to run. Must be in the
+                current valid-next set; otherwise the call returns
+                an ``invalid_transition`` error with the list of
+                actions actually allowed right now.
+            inputs: Keyword inputs to the action. Each action
+                declares its own required + optional inputs;
+                consult ``theodosia://next`` and the action's docstring
+                to see what's expected. Object is the canonical
+                form. A JSON-encoded string is also accepted (some
+                clients serialize nested object arguments that way)
+                and is parsed into an object before dispatch.
+        """
+        # Coerce a JSON-string inputs into a dict so the body always
+        # sees the canonical shape. The schema advertises both forms
+        # so clients that validate against the schema don't reject
+        # the string-encoded path before sending the request.
+        if isinstance(inputs, str):
+            try:
+                parsed = json.loads(inputs)
+            except (json.JSONDecodeError, ValueError):
+                parsed = None
+            inputs = parsed if isinstance(parsed, dict) else None
+        # Peek the seq that this call's history entry will get, so
+        # the ctx.info headline matches the recorded seq.
+        seq = len(store.history(ctx.session_id)) if ctx is not None else 0
+        if action not in action_map:
+            return await _handle_unknown_action(
+                action=action,
+                inputs=inputs,
+                seq=seq,
+                ctx=ctx,
+                store=store,
+                shared_app=shared_app,
+                shared_lock=shared_lock,
+                factory=factory,
+                action_names=action_names,
+                next_hint=next_hint,
+                external_tools_map=external_tools_map,
+            )
+        app, lock, entry = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        effective_timeout = _action_timeout(action_map[action], action_timeout_seconds)
+        effective_validator = _action_validator(action_map[action], input_validators)
+        token = _current_session_entry.set(entry)
+        ctx_token = _current_fastmcp_context.set(ctx)
+        upstream_token = bind_upstream(upstream_manager) if upstream_manager else None
+        subruns_before = set(entry.subruns) if entry is not None else set()
+        try:
+            async with lock:
+                out = await _step_application(
+                    app,
+                    action_name=action,
+                    inputs=inputs or {},
+                    timeout_seconds=effective_timeout,
+                    validator=effective_validator,
+                    ctx=ctx,
+                )
+        except (
+            ValidationFailed,
+            InvalidTransitionError,
+            ActionTimeoutError,
+            ActionExecutionError,
+        ) as exc:
+            response, hist_kwargs = _refusal_payload(exc=exc, action_name=action, app=app)
+            # Reactive hint on refusal -- the FSM teaches the agent
+            # why the call was blocked plus what's reachable now.
+            state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
+            response = _with_next_guidance(
+                response,
+                state=state_for_hint,
+                valid_next=response.get("valid_next_actions") or [],
+                last_action=action,
+                refusal=response,
+                next_hint=next_hint,
+                external_tools_map=external_tools_map,
+            )
+            _record_history(
+                store,
+                ctx,
+                factory,
+                action=action,
+                inputs=inputs or {},
+                state_after=None,
+                app=app,
+                **hist_kwargs,
+            )
+            headline = _refusal_headline(
+                seq,
+                action,
+                response["error"],
+                detail=response.get("error_type", "") or "",
+            )
+            await _emit_log(ctx, headline)
+            return _step_tool_result(response, headline)
+        finally:
+            _current_session_entry.reset(token)
+            _current_fastmcp_context.reset(ctx_token)
+            if upstream_token is not None:
+                reset_upstream(upstream_token)
+        new_subruns: list[str] = []
+        if entry is not None:
+            new_subruns = [s for s in entry.subruns if s not in subruns_before]
+        # Reactive hint on success -- FSM-derived guidance for the
+        # next move. Auto-hint enumerates reachable actions; the
+        # domain callback can override with semantic-rich guidance.
+        out = _with_next_guidance(
+            out,
+            state=out["state"],
+            valid_next=out["valid_next_actions"],
+            last_action=action,
+            refusal=None,
+            next_hint=next_hint,
+            external_tools_map=external_tools_map,
+        )
+        _record_history(
+            store,
+            ctx,
+            factory,
+            action=action,
+            inputs=inputs or {},
+            state_after=out["state"],
+            valid_next_actions=out["valid_next_actions"],
+            subruns=new_subruns or None,
+            app=app,
+        )
+        headline = _success_headline(seq, action, out["valid_next_actions"])
+        await _emit_log(ctx, headline)
+        return _step_tool_result(out, headline)
+
+    # Constrain the action parameter to the actual graph's action names so
+    # the tool schema advertises an enum. Weak models otherwise hallucinate
+    # plausible-sounding action names (e.g. "Start the workflow.") and
+    # never recover; verified in the floor test (qwen3:0.6b went from 0/10
+    # to 10/10 once the enum was present). The injection is via Pydantic's
+    # Field(json_schema_extra=...) on an Annotated wrapper so FastMCP's
+    # schema generator picks it up without us forking the type hint.
+    step.__annotations__["action"] = Annotated[
+        str,
+        pydantic.Field(
+            description=(
+                "Name of the action to run. Must be one of the listed "
+                "values; calling an out-of-state value returns an "
+                "invalid_transition error with the current valid set."
+            ),
+            json_schema_extra={"enum": action_names.copy()},  # type: ignore[dict-item]
+        ),
+    ]
+    from mcp.types import ToolAnnotations
+
+    step_description = f"{step.__doc__}\n\n{action_surface}"
+    mcp.tool(
+        name="step",
+        description=step_description,
+        output_schema=_step_response_schema(),
+        annotations=ToolAnnotations(
+            title="Take one FSM transition",
+            # Each call advances the session's state machine.
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )(step)
+
+
+def _register_reset_tool(
+    mcp: FastMCP,
+    *,
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+) -> None:
+    """Register the ``reset_session`` meta tool on ``mcp``.
+
+    Always callable regardless of FSM state. Only meaningful in factory
+    mode; refuses in shared-app mode. The discovery hint in the server
+    instructions advertises it so the agent doesn't have to ask the human
+    to restart the server when it reaches a terminal node and wants to
+    try another path.
+    """
+    # Always callable regardless of FSM state. Only meaningful in
+    # factory mode; refuses in shared-app mode. The discovery hint in
+    # ``instructions`` advertises it so the agent doesn't have to ask
+    # the human to restart the server when it reaches a terminal node
+    # and wants to try another path.
+
+    async def reset_session(ctx: Context | None = None) -> ToolResult | dict[str, Any]:
+        """Reset this session's FSM to its entrypoint.
+
+        Rebuilds the session's Application via the factory, clears any
+        sub-runs the session spawned, and appends a ``reset_session``
+        marker entry to ``theodosia://history``. Prior history entries are
+        preserved, so the audit trail records the reset rather than
+        wiping it: ``ran A -> ran B -> reset -> ran A again``.
+
+        Refuses in shared-app mode (servers mounted with an
+        ``Application`` instance rather than a factory) because
+        resetting would affect every connected client at once. Use
+        per-session isolation (factory mode) for servers where reset
+        matters.
+        """
+        if factory is None:
+            return _step_tool_result(
+                {
+                    "error": "reset_not_supported",
+                    "reason": (
+                        "this server runs in shared-app mode (no factory was passed "
+                        "to mount); resetting would affect every connected client. "
+                        "Disconnect and reconnect for a fresh session, or remount "
+                        "the server with a factory: mount(() -> Application, ...)"
+                    ),
+                },
+                "reset_session × shared-app mode",
+            )
+        if ctx is None:
+            return _step_tool_result({"error": "no_session"}, "reset_session × no_session")
+
+        entry = store.get_or_create(ctx.session_id, factory)
+        async with entry.lock:
+            previous_state, _ = _serializable_state(
+                _public_state(entry.application.state.get_all())
+                if entry.application is not None
+                else {}
+            )
+            entry.application = factory()
+            entry.subruns.clear()
+            new_app = entry.application
+            assert new_app is not None
+            new_state, coerced = _serializable_state(_public_state(new_app.state.get_all()))
+            if coerced:
+                new_state["_theodosia"] = {"coerced_keys": coerced}
+            valid_next = valid_next_action_names(new_app)
+            entry.last_access = time.monotonic()
+
+        _record_history(
+            store,
+            ctx,
+            factory,
+            action="reset_session",
+            inputs={},
+            state_after=new_state,
+            valid_next_actions=valid_next,
+            app=new_app,
+        )
+
+        headline = f"Session reset → {new_app.entrypoint}"
+        await _emit_log(ctx, headline)
+        return _step_tool_result(
+            {
+                "action": "reset_session",
+                "result": {"previous_state": previous_state},
+                "state": new_state,
+                "valid_next_actions": valid_next,
+                "app_id": new_app.uid,
+                "tracker_project": _tracker_project(new_app),
+            },
+            headline,
+        )
+
+    from mcp.types import ToolAnnotations
+
+    mcp.tool(
+        name="reset_session",
+        description=reset_session.__doc__,
+        annotations=ToolAnnotations(
+            title="Reset this session",
+            destructiveHint=True,  # discards the session's state and history
+            idempotentHint=True,  # repeated resets are no-ops after the first
+            openWorldHint=False,
+        ),
+    )(reset_session)
+
+
+def _fork_target_refusal(entry: _SessionEntry, sequence_id: int) -> ToolResult | None:
+    """Validate a ``fork_at`` target history entry; a refusal or ``None``.
+
+    Refuses out-of-range ids, refusal entries (no state to restore), and
+    fork/reset marker entries (avoid walking a hall of mirrors).
+    """
+    if sequence_id < 0 or sequence_id >= len(entry.history):
+        return _step_tool_result(
+            {
+                "error": "unknown_sequence_id",
+                "requested": sequence_id,
+                "history_length": len(entry.history),
+            },
+            f"fork_at × unknown_sequence_id ({sequence_id})",
+        )
+    target = entry.history[sequence_id]
+    if target.get("refused"):
+        return _step_tool_result(
+            {
+                "error": "cannot_fork_to_refusal",
+                "sequence_id": sequence_id,
+                "refusal_reason": target.get("refusal_reason"),
+            },
+            f"fork_at × cannot_fork_to_refusal (seq={sequence_id})",
+        )
+    if target.get("action") in {"fork_at", "reset_session"}:
+        return _step_tool_result(
+            {
+                "error": "cannot_fork_to_meta_entry",
+                "sequence_id": sequence_id,
+                "action": target.get("action"),
+            },
+            f"fork_at × cannot_fork_to_meta_entry (seq={sequence_id})",
+        )
+    if target.get("state_after") is None:
+        return _step_tool_result(
+            {"error": "no_state_snapshot", "sequence_id": sequence_id},
+            f"fork_at × no_state_snapshot (seq={sequence_id})",
+        )
+    return None
+
+
+def _register_fork_at_tool(
+    mcp: FastMCP,
+    *,
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+) -> None:
+    """Register the ``fork_at`` meta tool on ``mcp``.
+
+    Rewinds the session's Application to the state captured after a
+    specific history entry, letting an agent explore "what if" branches
+    without disconnecting and losing context. Implemented via the
+    in-memory history rather than Burr's tracker-based replay so it works
+    without requiring users to wire up a LocalTrackingClient.
+    """
+    from mcp.types import ToolAnnotations
+
+    # Rewind the session's Application to the state captured after a
+    # specific history entry. Lets an agent explore "what if" branches
+    # without disconnecting and losing context. Implemented via our
+    # in-memory history rather than Burr's tracker-based replay so it
+    # works without requiring users to wire up a LocalTrackingClient.
+
+    async def fork_at(
+        sequence_id: int | None = None,
+        seq: int | None = None,
+        ctx: Context | None = None,
+    ) -> ToolResult | dict[str, Any]:
+        """Rewind the session to the state captured after history[seq=N].
+
+        ``sequence_id`` is the ``seq`` field on a ``theodosia://history`` entry.
+        ``seq`` is accepted as an alias so a client can copy the value straight
+        from history under either name (``sequence_id`` wins if both are given).
+        The session's Application is rebuilt via the factory, then its
+        state is overwritten with the snapshot captured at that point,
+        and its ``__PRIOR_STEP`` is set to the action name from that
+        entry so ``valid_next_actions`` computes correctly. Sub-runs
+        recorded after that point are cleared. A ``fork_at`` marker is
+        appended to history with the target sequence_id under
+        ``inputs``.
+
+        Refuses when:
+          - shared-app mode (would affect every connected client);
+          - sequence_id is out of range;
+          - the target entry was a refusal (state_after is None);
+          - the target entry is itself a fork or reset marker (avoid
+            walking a hall of mirrors).
+        """
+        if factory is None:
+            return _step_tool_result(
+                {
+                    "error": "fork_not_supported",
+                    "reason": (
+                        "this server runs in shared-app mode (no factory was passed "
+                        "to mount); forking would affect every connected client. "
+                        "Remount with a factory to enable fork_at."
+                    ),
+                },
+                "fork_at × shared-app mode",
+            )
+        if ctx is None:
+            return _step_tool_result({"error": "no_session"}, "fork_at × no_session")
+        if sequence_id is None:
+            sequence_id = seq
+        if sequence_id is None:
+            return _step_tool_result(
+                {
+                    "error": "missing_sequence_id",
+                    "reason": (
+                        "pass sequence_id (the `seq` field from a "
+                        "theodosia://history entry); `seq` is accepted as an alias."
+                    ),
+                },
+                "fork_at × missing_sequence_id",
+            )
+
+        entry = store.get_or_create(ctx.session_id, factory)
+        async with entry.lock:
+            refusal = _fork_target_refusal(entry, sequence_id)
+            if refusal is not None:
+                return refusal
+            target = entry.history[sequence_id]
+            saved_state = target.get("state_after")
+            # _fork_target_refusal already refused entries without a snapshot.
+            assert saved_state is not None
+            target_action = target.get("action")
+
+            # Keep sub-runs spawned at or before the fork point; the
+            # parent history entries that reference them are still
+            # visible, so dropping them would leave dangling links.
+            kept_subrun_ids: set[str] = {
+                sid for h in entry.history[: sequence_id + 1] for sid in (h.get("subruns") or [])
+            }
+            kept_subruns = {
+                sid: rec for sid, rec in entry.subruns.items() if sid in kept_subrun_ids
+            }
+
+            new_app, new_state, valid_next = _restore_snapshot(
+                entry=entry,
+                factory=factory,
+                state_dict=saved_state,
+                last_action=target_action,
+                sequence_id_override=sequence_id,
+                kept_subruns=kept_subruns,
+            )
+
+        _record_history(
+            store,
+            ctx,
+            factory,
+            action="fork_at",
+            inputs={"sequence_id": sequence_id},
+            state_after=new_state,
+            valid_next_actions=valid_next,
+            app=new_app,
+        )
+
+        headline = f"Forked to seq={sequence_id} ({target_action})"
+        await _emit_log(ctx, headline)
+        return _step_tool_result(
+            {
+                "action": "fork_at",
+                "result": {
+                    "sequence_id": sequence_id,
+                    "from_action": target_action,
+                },
+                "state": new_state,
+                "valid_next_actions": valid_next,
+                "app_id": new_app.uid,
+                "tracker_project": _tracker_project(new_app),
+            },
+            headline,
+        )
+
+    mcp.tool(
+        name="fork_at",
+        description=fork_at.__doc__,
+        annotations=ToolAnnotations(
+            title="Branch this session from a prior step",
+            destructiveHint=True,  # replaces current state with the past snapshot
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )(fork_at)
+
+
+async def _load_past_state_via_loader(
+    state_loader: Any,
+    *,
+    partition_key: str,
+    app_id: str,
+    sequence_id: int,
+) -> tuple[dict[str, Any] | None, str | None, ToolResult | None]:
+    """Tier 1 of ``fork_from_past``: an explicit Burr ``BaseStateLoader``.
+
+    Works with any persister (SQLite, S3, postgres, etc.). Returns
+    ``(state_dict, last_action, None)`` on success or
+    ``(None, None, refusal)`` when the run can't be loaded.
+    """
+    try:
+        raw = state_loader.load(
+            partition_key=partition_key,
+            app_id=app_id,
+            sequence_id=sequence_id if sequence_id != -1 else None,
+        )
+        loaded = await raw if asyncio.iscoroutine(raw) else raw
+    except Exception as exc:
+        refusal = _step_tool_result(
+            {
+                "error": "unknown_past_run",
+                "reason": str(exc),
+                "app_id": app_id,
+                "sequence_id": sequence_id,
+            },
+            f"fork_from_past × unknown_past_run ({app_id})",
+        )
+        return None, None, refusal
+    if loaded is None:
+        refusal = _step_tool_result(
+            {
+                "error": "unknown_past_run",
+                "reason": "loader returned None",
+                "app_id": app_id,
+                "sequence_id": sequence_id,
+            },
+            f"fork_from_past × unknown_past_run ({app_id})",
+        )
+        return None, None, refusal
+    # PersistedStateData has state as a burr State; pull the dict out and
+    # let the rebuild path normalise.
+    return loaded["state"].get_all(), loaded.get("position"), None
+
+
+def _load_past_state_via_tracker(
+    application: Application[Any] | None,
+    *,
+    app_id: str,
+    sequence_id: int,
+) -> tuple[dict[str, Any] | None, str | None, ToolResult | None]:
+    """Tier 2 of ``fork_from_past``: the Application's LocalTrackingClient."""
+    try:
+        from burr.tracking.client import LocalTrackingClient
+    except ImportError:
+        return None, None, _step_tool_result({"error": "no_tracker"}, "fork_from_past × no_tracker")
+    tracker = getattr(application, "_tracker", None)
+    if not isinstance(tracker, LocalTrackingClient):
+        refusal = _step_tool_result(
+            {
+                "error": "no_tracker",
+                "reason": (
+                    "no state_loader passed to mount() and the current "
+                    "Application has no LocalTrackingClient. Either "
+                    "pass `state_loader=<BaseStateLoader>` to mount() "
+                    "or add `.with_tracker(LocalTrackingClient(...))` "
+                    "to the factory."
+                ),
+            },
+            "fork_from_past × no_tracker",
+        )
+        return None, None, refusal
+    try:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            loaded_state_dict, last_action = LocalTrackingClient.load_state(
+                project=tracker.project_id,
+                app_id=app_id,
+                sequence_id=sequence_id,
+                storage_dir=tracker.raw_storage_dir,
+            )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        refusal = _step_tool_result(
+            {
+                "error": "unknown_past_run",
+                "reason": str(exc),
+                "app_id": app_id,
+                "sequence_id": sequence_id,
+            },
+            f"fork_from_past × unknown_past_run ({app_id})",
+        )
+        return None, None, refusal
+    return loaded_state_dict, last_action, None
+
+
+def _register_fork_from_past_tool(
+    mcp: FastMCP,
+    *,
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+    state_loader: Any | None,
+) -> None:
+    """Register the ``fork_from_past`` meta tool on ``mcp``.
+
+    Resumes a past Burr run from disk: recovery after a server restart, or
+    forking from any persisted past app_id the client has tracked. Needs
+    factory mode (to rebuild the Application) and a state source (explicit
+    loader or the Application's LocalTrackingClient).
+    """
+    from mcp.types import ToolAnnotations
+
+    # Resume a past Burr run from disk. Lets an agent recover state
+    # after a server restart, or fork from any persisted past app_id
+    # the client has tracked. Requires:
+    #   - factory mode (need to rebuild the Application)
+    #   - the session's current Application to have a
+    #     LocalTrackingClient attached (so we know which storage_dir
+    #     and project to read from)
+
+    async def fork_from_past(
+        app_id: str,
+        sequence_id: int = -1,
+        partition_key: str = "",
+        ctx: Context | None = None,
+    ) -> ToolResult | dict[str, Any]:
+        """Resume a past Burr run by loading persisted state.
+
+        Three-tier source resolution:
+
+        1. If ``mount(state_loader=...)`` was passed an explicit Burr
+           ``BaseStateLoader``, use it. Any persister works:
+           ``SQLitePersister``, custom S3/postgres loaders, etc.
+        2. Else if the session's current Application has a
+           ``LocalTrackingClient`` attached, read its on-disk log.
+        3. Else refuse.
+
+        ``partition_key`` defaults to empty string, matching Burr's
+        default; pass it explicitly when your persister uses
+        partitioned storage.
+
+        Use this for:
+          - resuming a session across server restarts (track
+            ``app_id`` on the client, restore here after reconnect);
+          - forking from any persisted past run, not just the current
+            session's in-memory history.
+
+        Refuses when:
+          - shared-app mode (no factory to rebuild from);
+          - no state_loader configured and no LocalTrackingClient on
+            the Application;
+          - the requested app_id/sequence_id doesn't exist.
+        """
+        if factory is None:
+            return _step_tool_result(
+                {
+                    "error": "fork_not_supported",
+                    "reason": (
+                        "this server runs in shared-app mode (no factory was passed "
+                        "to mount); cross-session resume requires per-session "
+                        "isolation. Remount with a factory."
+                    ),
+                },
+                "fork_from_past × shared-app mode",
+            )
+        if ctx is None:
+            return _step_tool_result({"error": "no_session"}, "fork_from_past × no_session")
+
+        entry = store.get_or_create(ctx.session_id, factory)
+        # Bind ``partition_key`` to the calling session's identity. Without
+        # this, a caller could pass any partition_key and load another
+        # tenant's persisted state. The bound partition_key is the one the
+        # session's factory wrote via ``with_identifiers(partition_key=...)``;
+        # when the caller passes the empty default we fill in that value, and
+        # when they pass a non-empty value that disagrees we refuse.
+        bound_partition_key = getattr(entry.application, "_partition_key", None) or ""
+        if partition_key and partition_key != bound_partition_key:
+            return _step_tool_result(
+                {
+                    "error": "partition_mismatch",
+                    "reason": (
+                        "the caller-supplied partition_key does not match the "
+                        "session's bound partition_key; refusing to load state "
+                        "from a different partition. Mount per-tenant servers "
+                        "if cross-partition resume is intended."
+                    ),
+                    "requested": partition_key,
+                },
+                f"fork_from_past × partition_mismatch ({partition_key})",
+            )
+        partition_key = bound_partition_key
+        async with entry.lock:
+            if state_loader is not None:
+                loaded_state_dict, last_action, refusal = await _load_past_state_via_loader(
+                    state_loader,
+                    partition_key=partition_key,
+                    app_id=app_id,
+                    sequence_id=sequence_id,
+                )
+            else:
+                loaded_state_dict, last_action, refusal = _load_past_state_via_tracker(
+                    entry.application, app_id=app_id, sequence_id=sequence_id
+                )
+            if refusal is not None:
+                return refusal
+            # The loader helpers return a refusal or a state, never neither.
+            assert loaded_state_dict is not None
+
+            # In-memory subruns belonged to the previous session state,
+            # which has been replaced; clear all of them.
+            new_app, new_state, valid_next = _restore_snapshot(
+                entry=entry,
+                factory=factory,
+                state_dict=loaded_state_dict,
+                last_action=last_action,
+            )
+
+        _record_history(
+            store,
+            ctx,
+            factory,
+            action="fork_from_past",
+            inputs={"app_id": app_id, "sequence_id": sequence_id},
+            state_after=new_state,
+            valid_next_actions=valid_next,
+            app=new_app,
+        )
+
+        headline = f"Resumed app_id={app_id} seq={sequence_id}"
+        await _emit_log(ctx, headline)
+        return _step_tool_result(
+            {
+                "action": "fork_from_past",
+                "result": {
+                    "loaded_app_id": app_id,
+                    "loaded_sequence_id": sequence_id,
+                    "from_action": last_action,
+                },
+                "state": new_state,
+                "valid_next_actions": valid_next,
+                "app_id": new_app.uid,
+                "tracker_project": _tracker_project(new_app),
+            },
+            headline,
+        )
+
+    mcp.tool(
+        name="fork_from_past",
+        description=fork_from_past.__doc__,
+        annotations=ToolAnnotations(
+            title="Resume a different session's past state",
+            destructiveHint=True,  # replaces this session's state with another's
+            idempotentHint=False,
+            openWorldHint=True,  # reaches outside the current session's history
+        ),
+    )(fork_from_past)
+
+
 def mount(
     application: ApplicationOrFactory | Any,
     *,
@@ -1259,964 +2399,36 @@ def mount(
     for _mw in middleware or ():
         mcp.add_middleware(_mw)
 
-    # ── resources ────────────────────────────────────────────────────
+    _register_resources(
+        mcp,
+        store=store,
+        shared_app=shared_app,
+        shared_lock=shared_lock,
+        factory=factory,
+        graph_summary_json=graph_summary_json,
+    )
+    _register_personas(
+        mcp, personas_map=personas_map, persona=persona, store=store, factory=factory
+    )
 
-    @mcp.resource("theodosia://graph")
-    async def _graph_resource() -> str:
-        """Static description of the Application's FSM topology.
-
-        Read once per session. The graph doesn't change after mount;
-        a model that has this resource doesn't need to keep polling
-        ``theodosia://next`` to plan ahead. Each tool response already
-        carries the current state and the valid next actions, so
-        runtime polling is only useful for forensic inspection of an
-        already-running session.
-
-        Shape:
-
-            {
-              "name": "<server name>",
-              "entrypoint": "<starting action>",
-              "actions": [
-                {"name", "description", "reads", "writes",
-                 "required_inputs", "optional_inputs"}, ...
-              ],
-              "transitions": [
-                {"from", "to", "condition": "<expr or null>"}, ...
-              ]
-            }
-        """
-        return graph_summary_json
-
-    @mcp.resource("theodosia://state")
-    async def _state_resource(ctx: Context) -> str:
-        """Current Application state as JSON.
-
-        Internal Burr keys (``__PRIOR_STEP``, ``__SEQUENCE_ID``) are
-        filtered. Non-JSON-representable values are coerced to strings,
-        with the affected keys listed under ``_theodosia.coerced_keys``
-        so the client knows the round-trip is lossy.
-        """
-        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        state, coerced = _serializable_state(_public_state(app.state.get_all()))
-        if coerced:
-            state["_theodosia"] = {"coerced_keys": coerced}
-        return json.dumps(state, indent=2)
-
-    @mcp.resource("theodosia://next")
-    async def _next_resource(ctx: Context) -> str:
-        """Action names reachable from the current state.
-
-        For non-branching graphs this is one name. For branching graphs,
-        all conditionally-reachable next actions are listed. After a
-        terminal action this is an empty list, meaning the FSM is done.
-        """
-        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        return json.dumps(valid_next_action_names(app))
-
-    @mcp.resource("theodosia://history")
-    async def _history_resource(ctx: Context) -> str:
-        """Timeline of every action attempted in this session.
-
-        The payload is a JSON array (no wrapper object) of entries each
-        carrying ``seq``, ``ts``, ``action``, ``inputs``, ``state_after``,
-        ``valid_next_actions``, ``refused``, and ``refusal_reason``. Both
-        successful steps and refused attempts (invalid transitions, unknown
-        actions) appear. In factory-mode deployments each session sees only
-        its own history; in shared-app deployments each session sees the
-        timeline of its own calls against the shared FSM.
-        """
-        history = store.history(ctx.session_id) if ctx is not None else []
-        return json.dumps(history, default=str, indent=2)
-
-    @mcp.resource("theodosia://subruns")
-    async def _subruns_resource(ctx: Context) -> str:
-        """Index of sub-Application runs spawned in this session.
-
-        Each entry has ``id``, ``uri``, ``label``, ``started_ts``,
-        ``ended_ts``, and the ``parent_action`` that spawned it. The
-        ``uri`` field is the fully-rendered ``theodosia://subruns/{id}``
-        address, ready to read without constructing it from a template.
-        Empty list if no actions in this session called
-        ``spawn_subapp``.
-        """
-        if ctx is None:
-            return json.dumps([])
-        entry = store.get_or_create(ctx.session_id, factory)
-        index = []
-        # Reverse-map subrun_id -> the parent history entry that spawned it.
-        parent_action_for: dict[str, str] = {}
-        for h in entry.history:
-            for sid in h.get("subruns", []) or []:
-                parent_action_for[sid] = h["action"]
-        for sid, record in entry.subruns.items():
-            index.append(
-                {
-                    "id": sid,
-                    "uri": f"theodosia://subruns/{sid}",
-                    "label": record.get("label"),
-                    "started_ts": record.get("started_ts"),
-                    "ended_ts": record.get("ended_ts"),
-                    "parent_action": parent_action_for.get(sid),
-                    "error": record.get("error"),
-                }
-            )
-        return json.dumps(index, default=str, indent=2)
-
-    @mcp.resource("theodosia://subruns/{subrun_id}")
-    async def _subrun_detail_resource(subrun_id: str, ctx: Context) -> str:
-        """Full record for one sub-Application run.
-
-        Includes the sub-run's id, label, parent-spawning timestamps,
-        in-memory history of the sub-graph's steps, final public
-        state, and any error that aborted the run. Returns
-        ``{"error": "unknown_subrun"}`` if the id isn't known to this
-        session.
-        """
-        if ctx is None:
-            return json.dumps({"error": "no_session"})
-        entry = store.get_or_create(ctx.session_id, factory)
-        record = entry.subruns.get(subrun_id)
-        if record is None:
-            return json.dumps(
-                {
-                    "error": "unknown_subrun",
-                    "subrun_id": subrun_id,
-                    "known_subruns": list(entry.subruns),
-                },
-                indent=2,
-            )
-        return json.dumps(record, default=str, indent=2)
-
-    @mcp.resource("theodosia://trace")
-    async def _trace_resource(ctx: Context) -> str:
-        """Burr's on-disk LocalTrackingClient log for this session's Application.
-
-        Returns the JSONL records Burr writes for every action step
-        (action enter/exit, state diff, timing). The Application must
-        have been built with ``.with_tracker(LocalTrackingClient(...))``
-        for this resource to return data; otherwise the response is
-        ``{"error": "no_tracker", "message": "..."}``.
-
-        Responses are capped at the most recent 1000 records to keep
-        the wire payload bounded. For full traces, read the log file
-        directly off disk at the path Burr's tracker writes to.
-
-        This is the cross-reference between theodosia's in-memory
-        ``theodosia://history`` (one entry per attempted action, including
-        refusals) and Burr's own structured trace format (one entry
-        per state transition, full Burr replay shape).
-        """
-        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        path = _tracker_log_path(app)
-        if path is None:
-            return json.dumps(
-                {
-                    "error": "no_tracker",
-                    "message": (
-                        "This Application has no LocalTrackingClient attached. "
-                        "Pass tracker=LocalTrackingClient(project='...') to "
-                        "ApplicationBuilder.with_tracker(...) when building "
-                        "the Application to enable theodosia://trace."
-                    ),
-                },
-                indent=2,
-            )
-        if not path.exists():
-            return json.dumps([])
-        return json.dumps(_read_trace(path), default=str, indent=2)
-
-    @mcp.resource("theodosia://session")
-    async def _session_resource(ctx: Context) -> str:
-        """Tracker coordinates for the current MCP session's Application.
-
-        Returns ``{project, app_id, app_dir, partition_key}`` so a client
-        (or the agent itself) can locate this session's tracker data on
-        disk without guessing. Useful for terminal tooling like
-        ``theodosia watch <project>`` that tails the LocalTrackingClient
-        JSONL, and for any out-of-band inspection of
-        ``~/.burr/<project>/<app-id>/log.jsonl``.
-
-        ``project`` and ``app_dir`` are null when no
-        ``LocalTrackingClient`` is attached; ``app_id`` and
-        ``partition_key`` are always populated because they live on the
-        Application directly.
-        """
-        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        project: str | None = None
-        app_dir: str | None = None
-        try:
-            from burr.tracking.client import LocalTrackingClient
-        except ImportError:
-            LocalTrackingClient = None  # type: ignore[assignment,misc]
-        tracker = getattr(app, "_tracker", None)
-        if LocalTrackingClient is not None and isinstance(tracker, LocalTrackingClient):
-            project = tracker.project_id
-            try:
-                storage_dir = Path(tracker.storage_dir).expanduser().resolve()
-                app_dir = str((storage_dir / app.uid).resolve())
-            except (OSError, AttributeError):
-                app_dir = None
-        return json.dumps(
-            {
-                "project": project,
-                "app_id": app.uid,
-                "app_dir": app_dir,
-                "partition_key": getattr(app, "_partition_key", None),
-            },
-            indent=2,
-        )
-
-    # ── personas: identity layer (when mounted with personas=) ──────
-    if personas_map:
-
-        @mcp.resource("theodosia://personas")
-        async def _personas_resource() -> str:
-            """Index of personas mounted on this server.
-
-            Returns ``{name: {description, voice, has_metadata}}`` so a client
-            can list available identities without fetching every body. Each
-            persona is also registered as an MCP prompt named
-            ``theodosia/persona/<name>``; ``prompts/get`` returns the body.
-            """
-            return json.dumps(
-                {
-                    p.name: {
-                        "description": p.description,
-                        "voice": p.voice,
-                        "has_metadata": bool(p.metadata),
-                    }
-                    for p in personas_map.values()
-                },
-                indent=2,
-            )
-
-        if persona is not None:
-            default_name = persona.name
-
-            @mcp.resource("theodosia://persona")
-            async def _active_persona_resource() -> str:
-                """The persona currently active for this server.
-
-                Whichever persona was chosen at mount time via
-                ``default_persona=`` (or, if not specified, the lexically
-                first persona in the loaded directory).
-                """
-                p = personas_map[default_name]
-                return json.dumps(
-                    {
-                        "name": p.name,
-                        "description": p.description,
-                        "voice": p.voice,
-                        "body": p.body,
-                        "metadata": p.metadata,
-                    },
-                    indent=2,
-                )
-
-        # Each persona becomes an MCP prompt. ``ctx: Context`` is the
-        # FastMCP convention for server-injected context (without the
-        # annotation it would be advertised as a required client argument).
-        # When a session is active the body is interpolated against the
-        # current frame; unknown placeholders render as empty strings.
-        for _persona in personas_map.values():
-            _name = f"theodosia/persona/{_persona.name}"
-            _desc = _persona.description or f"Persona: {_persona.name}"
-
-            def _make_prompt_fn(persona_obj: Any) -> Callable[[Context], Any]:
-                async def _persona_prompt_fn(ctx: Context) -> str:
-                    frame = _build_persona_frame(ctx, store, factory)
-                    return str(persona_obj.to_prompt_text(frame=frame))
-
-                return _persona_prompt_fn
-
-            mcp.prompt(name=_name, description=_desc)(_make_prompt_fn(_persona))
-
-    # ── tools, per mode ──────────────────────────────────────────────
-
-    if mode is ServingMode.STEP:
-        action_names = [a.name for a in shared_app.graph.actions]
-        action_map = {a.name: a for a in shared_app.graph.actions}
-
-        async def step(
-            action: str,
-            inputs: dict[str, Any] | str | None = None,
-            ctx: Context | None = None,
-        ) -> ToolResult:
-            """Advance the FSM by one transition.
-
-            Args:
-                action: Name of the action to run. Must be in the
-                    current valid-next set; otherwise the call returns
-                    an ``invalid_transition`` error with the list of
-                    actions actually allowed right now.
-                inputs: Keyword inputs to the action. Each action
-                    declares its own required + optional inputs;
-                    consult ``theodosia://next`` and the action's docstring
-                    to see what's expected. Object is the canonical
-                    form. A JSON-encoded string is also accepted (some
-                    clients serialize nested object arguments that way)
-                    and is parsed into an object before dispatch.
-            """
-            # Coerce a JSON-string inputs into a dict so the body always
-            # sees the canonical shape. The schema advertises both forms
-            # so clients that validate against the schema don't reject
-            # the string-encoded path before sending the request.
-            if isinstance(inputs, str):
-                try:
-                    parsed = json.loads(inputs)
-                except (json.JSONDecodeError, ValueError):
-                    parsed = None
-                inputs = parsed if isinstance(parsed, dict) else None
-            # Peek the seq that this call's history entry will get, so
-            # the ctx.info headline matches the recorded seq.
-            seq = len(store.history(ctx.session_id)) if ctx is not None else 0
-            if action not in action_map:
-                # A hallucinated action name is the refusal a weaker model
-                # is most likely to hit. Steer it the same way an
-                # invalid_transition does: resolve the session's current
-                # Application, report what's reachable now, and run the
-                # reactive-hint path so the response is self-correcting on
-                # its own. ``known_actions`` stays for spotting typos.
-                app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-                valid = valid_next_action_names(app)
-                response: dict[str, Any] = {
-                    "error": "unknown_action",
-                    "requested": action,
-                    "known_actions": action_names,
-                    "valid_next_actions": valid,
-                    "message": (
-                        f"unknown action {action!r}. Reachable actions from the "
-                        f"current state: {valid}."
-                    ),
-                }
-                state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
-                hint = _compose_next_hint(
-                    state=state_for_hint,
-                    valid_next=valid,
-                    last_action=action,
-                    refusal=response,
-                    domain_callback=next_hint,
-                )
-                if hint:
-                    response = response | {"next_hint": hint}
-                if external_tools_map:
-                    net = _next_external_tools(external_tools_map, valid)
-                    if net:
-                        response = response | {"next_external_tools": net}
-                _record_history(
-                    store,
-                    ctx,
-                    factory,
-                    action=action,
-                    inputs=inputs or {},
-                    state_after=None,
-                    valid_next_actions=valid,
-                    refused=True,
-                    refusal_reason="unknown_action",
-                    app=app,
-                )
-                headline = f"Step {seq}: {action} × unknown_action"
-                await _emit_log(ctx, headline)
-                return _step_tool_result(response, headline)
-            app, lock, entry = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-            effective_timeout = _action_timeout(action_map[action], action_timeout_seconds)
-            effective_validator = _action_validator(action_map[action], input_validators)
-            token = _current_session_entry.set(entry)
-            ctx_token = _current_fastmcp_context.set(ctx)
-            upstream_token = bind_upstream(upstream_manager) if upstream_manager else None
-            subruns_before = set(entry.subruns) if entry is not None else set()
-            try:
-                async with lock:
-                    out = await _step_application(
-                        app,
-                        action_name=action,
-                        inputs=inputs or {},
-                        timeout_seconds=effective_timeout,
-                        validator=effective_validator,
-                        ctx=ctx,
-                    )
-            except (
-                ValidationFailed,
-                InvalidTransitionError,
-                ActionTimeoutError,
-                ActionExecutionError,
-            ) as exc:
-                response, hist_kwargs = _refusal_payload(exc=exc, action_name=action, app=app)
-                # Reactive hint on refusal -- the FSM teaches the agent
-                # why the call was blocked plus what's reachable now.
-                state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
-                hint = _compose_next_hint(
-                    state=state_for_hint,
-                    valid_next=response.get("valid_next_actions") or [],
-                    last_action=action,
-                    refusal=response,
-                    domain_callback=next_hint,
-                )
-                if hint:
-                    response = response | {"next_hint": hint}
-                if external_tools_map:
-                    net = _next_external_tools(
-                        external_tools_map, response.get("valid_next_actions") or []
-                    )
-                    if net:
-                        response = response | {"next_external_tools": net}
-                _record_history(
-                    store,
-                    ctx,
-                    factory,
-                    action=action,
-                    inputs=inputs or {},
-                    state_after=None,
-                    app=app,
-                    **hist_kwargs,
-                )
-                headline = _refusal_headline(
-                    seq,
-                    action,
-                    response["error"],
-                    detail=response.get("error_type", "") or "",
-                )
-                await _emit_log(ctx, headline)
-                return _step_tool_result(response, headline)
-            finally:
-                _current_session_entry.reset(token)
-                _current_fastmcp_context.reset(ctx_token)
-                if upstream_token is not None:
-                    reset_upstream(upstream_token)
-            new_subruns: list[str] = []
-            if entry is not None:
-                new_subruns = [s for s in entry.subruns if s not in subruns_before]
-            # Reactive hint on success -- FSM-derived guidance for the
-            # next move. Auto-hint enumerates reachable actions; the
-            # domain callback can override with semantic-rich guidance.
-            hint = _compose_next_hint(
-                state=out["state"],
-                valid_next=out["valid_next_actions"],
-                last_action=action,
-                refusal=None,
-                domain_callback=next_hint,
-            )
-            if hint:
-                out = out | {"next_hint": hint}
-            if external_tools_map:
-                net = _next_external_tools(external_tools_map, out["valid_next_actions"])
-                if net:
-                    out = out | {"next_external_tools": net}
-            _record_history(
-                store,
-                ctx,
-                factory,
-                action=action,
-                inputs=inputs or {},
-                state_after=out["state"],
-                valid_next_actions=out["valid_next_actions"],
-                subruns=new_subruns or None,
-                app=app,
-            )
-            headline = _success_headline(seq, action, out["valid_next_actions"])
-            await _emit_log(ctx, headline)
-            return _step_tool_result(out, headline)
-
-        # Constrain the action parameter to the actual graph's action names so
-        # the tool schema advertises an enum. Weak models otherwise hallucinate
-        # plausible-sounding action names (e.g. "Start the workflow.") and
-        # never recover; verified in the floor test (qwen3:0.6b went from 0/10
-        # to 10/10 once the enum was present). The injection is via Pydantic's
-        # Field(json_schema_extra=...) on an Annotated wrapper so FastMCP's
-        # schema generator picks it up without us forking the type hint.
-        step.__annotations__["action"] = Annotated[
-            str,
-            pydantic.Field(
-                description=(
-                    "Name of the action to run. Must be one of the listed "
-                    "values; calling an out-of-state value returns an "
-                    "invalid_transition error with the current valid set."
-                ),
-                json_schema_extra={"enum": action_names.copy()},  # type: ignore[dict-item]
-            ),
-        ]
-        from mcp.types import ToolAnnotations
-
-        step_description = f"{step.__doc__}\n\n{action_surface}"
-        mcp.tool(
-            name="step",
-            description=step_description,
-            output_schema=_step_response_schema(),
-            annotations=ToolAnnotations(
-                title="Take one FSM transition",
-                # Each call advances the session's state machine.
-                destructiveHint=True,
-                idempotentHint=False,
-                openWorldHint=False,
-            ),
-        )(step)
-
-    else:
+    if mode is not ServingMode.STEP:
         raise ValueError(f"unknown serving mode: {mode!r}")
-
-    # ── meta tool: reset_session ────────────────────────────────────
-    # Always callable regardless of FSM state. Only meaningful in
-    # factory mode; refuses in shared-app mode. The discovery hint in
-    # ``instructions`` advertises it so the agent doesn't have to ask
-    # the human to restart the server when it reaches a terminal node
-    # and wants to try another path.
-
-    async def reset_session(ctx: Context | None = None) -> ToolResult | dict[str, Any]:
-        """Reset this session's FSM to its entrypoint.
-
-        Rebuilds the session's Application via the factory, clears any
-        sub-runs the session spawned, and appends a ``reset_session``
-        marker entry to ``theodosia://history``. Prior history entries are
-        preserved, so the audit trail records the reset rather than
-        wiping it: ``ran A -> ran B -> reset -> ran A again``.
-
-        Refuses in shared-app mode (servers mounted with an
-        ``Application`` instance rather than a factory) because
-        resetting would affect every connected client at once. Use
-        per-session isolation (factory mode) for servers where reset
-        matters.
-        """
-        if factory is None:
-            return _step_tool_result(
-                {
-                    "error": "reset_not_supported",
-                    "reason": (
-                        "this server runs in shared-app mode (no factory was passed "
-                        "to mount); resetting would affect every connected client. "
-                        "Disconnect and reconnect for a fresh session, or remount "
-                        "the server with a factory: mount(() -> Application, ...)"
-                    ),
-                },
-                "reset_session × shared-app mode",
-            )
-        if ctx is None:
-            return _step_tool_result({"error": "no_session"}, "reset_session × no_session")
-
-        entry = store.get_or_create(ctx.session_id, factory)
-        async with entry.lock:
-            previous_state, _ = _serializable_state(
-                _public_state(entry.application.state.get_all())
-                if entry.application is not None
-                else {}
-            )
-            entry.application = factory()
-            entry.subruns.clear()
-            new_app = entry.application
-            assert new_app is not None
-            new_state, coerced = _serializable_state(_public_state(new_app.state.get_all()))
-            if coerced:
-                new_state["_theodosia"] = {"coerced_keys": coerced}
-            valid_next = valid_next_action_names(new_app)
-            entry.last_access = time.monotonic()
-
-        _record_history(
-            store,
-            ctx,
-            factory,
-            action="reset_session",
-            inputs={},
-            state_after=new_state,
-            valid_next_actions=valid_next,
-            app=new_app,
-        )
-
-        headline = f"Session reset → {new_app.entrypoint}"
-        await _emit_log(ctx, headline)
-        return _step_tool_result(
-            {
-                "action": "reset_session",
-                "result": {"previous_state": previous_state},
-                "state": new_state,
-                "valid_next_actions": valid_next,
-                "app_id": new_app.uid,
-                "tracker_project": _tracker_project(new_app),
-            },
-            headline,
-        )
-
-    from mcp.types import ToolAnnotations
-
-    mcp.tool(
-        name="reset_session",
-        description=reset_session.__doc__,
-        annotations=ToolAnnotations(
-            title="Reset this session",
-            destructiveHint=True,  # discards the session's state and history
-            idempotentHint=True,  # repeated resets are no-ops after the first
-            openWorldHint=False,
-        ),
-    )(reset_session)
-
-    # ── meta tool: fork_at ──────────────────────────────────────────
-    # Rewind the session's Application to the state captured after a
-    # specific history entry. Lets an agent explore "what if" branches
-    # without disconnecting and losing context. Implemented via our
-    # in-memory history rather than Burr's tracker-based replay so it
-    # works without requiring users to wire up a LocalTrackingClient.
-
-    async def fork_at(
-        sequence_id: int | None = None,
-        seq: int | None = None,
-        ctx: Context | None = None,
-    ) -> ToolResult | dict[str, Any]:
-        """Rewind the session to the state captured after history[seq=N].
-
-        ``sequence_id`` is the ``seq`` field on a ``theodosia://history`` entry.
-        ``seq`` is accepted as an alias so a client can copy the value straight
-        from history under either name (``sequence_id`` wins if both are given).
-        The session's Application is rebuilt via the factory, then its
-        state is overwritten with the snapshot captured at that point,
-        and its ``__PRIOR_STEP`` is set to the action name from that
-        entry so ``valid_next_actions`` computes correctly. Sub-runs
-        recorded after that point are cleared. A ``fork_at`` marker is
-        appended to history with the target sequence_id under
-        ``inputs``.
-
-        Refuses when:
-          - shared-app mode (would affect every connected client);
-          - sequence_id is out of range;
-          - the target entry was a refusal (state_after is None);
-          - the target entry is itself a fork or reset marker (avoid
-            walking a hall of mirrors).
-        """
-        if factory is None:
-            return _step_tool_result(
-                {
-                    "error": "fork_not_supported",
-                    "reason": (
-                        "this server runs in shared-app mode (no factory was passed "
-                        "to mount); forking would affect every connected client. "
-                        "Remount with a factory to enable fork_at."
-                    ),
-                },
-                "fork_at × shared-app mode",
-            )
-        if ctx is None:
-            return _step_tool_result({"error": "no_session"}, "fork_at × no_session")
-        if sequence_id is None:
-            sequence_id = seq
-        if sequence_id is None:
-            return _step_tool_result(
-                {
-                    "error": "missing_sequence_id",
-                    "reason": (
-                        "pass sequence_id (the `seq` field from a "
-                        "theodosia://history entry); `seq` is accepted as an alias."
-                    ),
-                },
-                "fork_at × missing_sequence_id",
-            )
-
-        entry = store.get_or_create(ctx.session_id, factory)
-        async with entry.lock:
-            if sequence_id < 0 or sequence_id >= len(entry.history):
-                return _step_tool_result(
-                    {
-                        "error": "unknown_sequence_id",
-                        "requested": sequence_id,
-                        "history_length": len(entry.history),
-                    },
-                    f"fork_at × unknown_sequence_id ({sequence_id})",
-                )
-            target = entry.history[sequence_id]
-            if target.get("refused"):
-                return _step_tool_result(
-                    {
-                        "error": "cannot_fork_to_refusal",
-                        "sequence_id": sequence_id,
-                        "refusal_reason": target.get("refusal_reason"),
-                    },
-                    f"fork_at × cannot_fork_to_refusal (seq={sequence_id})",
-                )
-            if target.get("action") in {"fork_at", "reset_session"}:
-                return _step_tool_result(
-                    {
-                        "error": "cannot_fork_to_meta_entry",
-                        "sequence_id": sequence_id,
-                        "action": target.get("action"),
-                    },
-                    f"fork_at × cannot_fork_to_meta_entry (seq={sequence_id})",
-                )
-            saved_state = target.get("state_after")
-            if saved_state is None:
-                return _step_tool_result(
-                    {"error": "no_state_snapshot", "sequence_id": sequence_id},
-                    f"fork_at × no_state_snapshot (seq={sequence_id})",
-                )
-            target_action = target.get("action")
-
-            # Keep sub-runs spawned at or before the fork point; the
-            # parent history entries that reference them are still
-            # visible, so dropping them would leave dangling links.
-            kept_subrun_ids: set[str] = {
-                sid for h in entry.history[: sequence_id + 1] for sid in (h.get("subruns") or [])
-            }
-            kept_subruns = {
-                sid: rec for sid, rec in entry.subruns.items() if sid in kept_subrun_ids
-            }
-
-            new_app, new_state, valid_next = _restore_snapshot(
-                entry=entry,
-                factory=factory,
-                state_dict=saved_state,
-                last_action=target_action,
-                sequence_id_override=sequence_id,
-                kept_subruns=kept_subruns,
-            )
-
-        _record_history(
-            store,
-            ctx,
-            factory,
-            action="fork_at",
-            inputs={"sequence_id": sequence_id},
-            state_after=new_state,
-            valid_next_actions=valid_next,
-            app=new_app,
-        )
-
-        headline = f"Forked to seq={sequence_id} ({target_action})"
-        await _emit_log(ctx, headline)
-        return _step_tool_result(
-            {
-                "action": "fork_at",
-                "result": {
-                    "sequence_id": sequence_id,
-                    "from_action": target_action,
-                },
-                "state": new_state,
-                "valid_next_actions": valid_next,
-                "app_id": new_app.uid,
-                "tracker_project": _tracker_project(new_app),
-            },
-            headline,
-        )
-
-    mcp.tool(
-        name="fork_at",
-        description=fork_at.__doc__,
-        annotations=ToolAnnotations(
-            title="Branch this session from a prior step",
-            destructiveHint=True,  # replaces current state with the past snapshot
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )(fork_at)
-
-    # ── meta tool: fork_from_past ───────────────────────────────────
-    # Resume a past Burr run from disk. Lets an agent recover state
-    # after a server restart, or fork from any persisted past app_id
-    # the client has tracked. Requires:
-    #   - factory mode (need to rebuild the Application)
-    #   - the session's current Application to have a
-    #     LocalTrackingClient attached (so we know which storage_dir
-    #     and project to read from)
-
-    async def fork_from_past(
-        app_id: str,
-        sequence_id: int = -1,
-        partition_key: str = "",
-        ctx: Context | None = None,
-    ) -> ToolResult | dict[str, Any]:
-        """Resume a past Burr run by loading persisted state.
-
-        Three-tier source resolution:
-
-        1. If ``mount(state_loader=...)`` was passed an explicit Burr
-           ``BaseStateLoader``, use it. Any persister works:
-           ``SQLitePersister``, custom S3/postgres loaders, etc.
-        2. Else if the session's current Application has a
-           ``LocalTrackingClient`` attached, read its on-disk log.
-        3. Else refuse.
-
-        ``partition_key`` defaults to empty string, matching Burr's
-        default; pass it explicitly when your persister uses
-        partitioned storage.
-
-        Use this for:
-          - resuming a session across server restarts (track
-            ``app_id`` on the client, restore here after reconnect);
-          - forking from any persisted past run, not just the current
-            session's in-memory history.
-
-        Refuses when:
-          - shared-app mode (no factory to rebuild from);
-          - no state_loader configured and no LocalTrackingClient on
-            the Application;
-          - the requested app_id/sequence_id doesn't exist.
-        """
-        if factory is None:
-            return _step_tool_result(
-                {
-                    "error": "fork_not_supported",
-                    "reason": (
-                        "this server runs in shared-app mode (no factory was passed "
-                        "to mount); cross-session resume requires per-session "
-                        "isolation. Remount with a factory."
-                    ),
-                },
-                "fork_from_past × shared-app mode",
-            )
-        if ctx is None:
-            return _step_tool_result({"error": "no_session"}, "fork_from_past × no_session")
-
-        entry = store.get_or_create(ctx.session_id, factory)
-        # Bind ``partition_key`` to the calling session's identity. Without
-        # this, a caller could pass any partition_key and load another
-        # tenant's persisted state. The bound partition_key is the one the
-        # session's factory wrote via ``with_identifiers(partition_key=...)``;
-        # when the caller passes the empty default we fill in that value, and
-        # when they pass a non-empty value that disagrees we refuse.
-        bound_partition_key = getattr(entry.application, "_partition_key", None) or ""
-        if partition_key and partition_key != bound_partition_key:
-            return _step_tool_result(
-                {
-                    "error": "partition_mismatch",
-                    "reason": (
-                        "the caller-supplied partition_key does not match the "
-                        "session's bound partition_key; refusing to load state "
-                        "from a different partition. Mount per-tenant servers "
-                        "if cross-partition resume is intended."
-                    ),
-                    "requested": partition_key,
-                },
-                f"fork_from_past × partition_mismatch ({partition_key})",
-            )
-        partition_key = bound_partition_key
-        async with entry.lock:
-            loaded_state_dict: dict[str, Any] | None = None
-            last_action: str | None = None
-
-            if state_loader is not None:
-                # Tier 1: explicit BaseStateLoader passed to mount().
-                # Works with any persister (SQLite, S3, postgres, etc.).
-                try:
-                    raw = state_loader.load(
-                        partition_key=partition_key,
-                        app_id=app_id,
-                        sequence_id=sequence_id if sequence_id != -1 else None,
-                    )
-                    if asyncio.iscoroutine(raw):
-                        loaded = await raw
-                    else:
-                        loaded = raw
-                except Exception as exc:
-                    return _step_tool_result(
-                        {
-                            "error": "unknown_past_run",
-                            "reason": str(exc),
-                            "app_id": app_id,
-                            "sequence_id": sequence_id,
-                        },
-                        f"fork_from_past × unknown_past_run ({app_id})",
-                    )
-                if loaded is None:
-                    return _step_tool_result(
-                        {
-                            "error": "unknown_past_run",
-                            "reason": "loader returned None",
-                            "app_id": app_id,
-                            "sequence_id": sequence_id,
-                        },
-                        f"fork_from_past × unknown_past_run ({app_id})",
-                    )
-                # PersistedStateData has state as a burr State; pull
-                # the dict out and let the rebuild path normalise.
-                loaded_state_obj = loaded["state"]
-                loaded_state_dict = loaded_state_obj.get_all()
-                last_action = loaded.get("position")
-            else:
-                # Tier 2: fall back to LocalTrackingClient on the app.
-                try:
-                    from burr.tracking.client import LocalTrackingClient
-                except ImportError:
-                    return _step_tool_result({"error": "no_tracker"}, "fork_from_past × no_tracker")
-                tracker = getattr(entry.application, "_tracker", None)
-                if not isinstance(tracker, LocalTrackingClient):
-                    return _step_tool_result(
-                        {
-                            "error": "no_tracker",
-                            "reason": (
-                                "no state_loader passed to mount() and the current "
-                                "Application has no LocalTrackingClient. Either "
-                                "pass `state_loader=<BaseStateLoader>` to mount() "
-                                "or add `.with_tracker(LocalTrackingClient(...))` "
-                                "to the factory."
-                            ),
-                        },
-                        "fork_from_past × no_tracker",
-                    )
-                try:
-                    import warnings
-
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", DeprecationWarning)
-                        loaded_state_dict, last_action = LocalTrackingClient.load_state(
-                            project=tracker.project_id,
-                            app_id=app_id,
-                            sequence_id=sequence_id,
-                            storage_dir=tracker.raw_storage_dir,
-                        )
-                except (ValueError, FileNotFoundError, OSError) as exc:
-                    return _step_tool_result(
-                        {
-                            "error": "unknown_past_run",
-                            "reason": str(exc),
-                            "app_id": app_id,
-                            "sequence_id": sequence_id,
-                        },
-                        f"fork_from_past × unknown_past_run ({app_id})",
-                    )
-
-            # In-memory subruns belonged to the previous session state,
-            # which has been replaced; clear all of them.
-            new_app, new_state, valid_next = _restore_snapshot(
-                entry=entry,
-                factory=factory,
-                state_dict=loaded_state_dict,
-                last_action=last_action,
-            )
-
-        _record_history(
-            store,
-            ctx,
-            factory,
-            action="fork_from_past",
-            inputs={"app_id": app_id, "sequence_id": sequence_id},
-            state_after=new_state,
-            valid_next_actions=valid_next,
-            app=new_app,
-        )
-
-        headline = f"Resumed app_id={app_id} seq={sequence_id}"
-        await _emit_log(ctx, headline)
-        return _step_tool_result(
-            {
-                "action": "fork_from_past",
-                "result": {
-                    "loaded_app_id": app_id,
-                    "loaded_sequence_id": sequence_id,
-                    "from_action": last_action,
-                },
-                "state": new_state,
-                "valid_next_actions": valid_next,
-                "app_id": new_app.uid,
-                "tracker_project": _tracker_project(new_app),
-            },
-            headline,
-        )
-
-    mcp.tool(
-        name="fork_from_past",
-        description=fork_from_past.__doc__,
-        annotations=ToolAnnotations(
-            title="Resume a different session's past state",
-            destructiveHint=True,  # replaces this session's state with another's
-            idempotentHint=False,
-            openWorldHint=True,  # reaches outside the current session's history
-        ),
-    )(fork_from_past)
+    _register_step_tool(
+        mcp,
+        store=store,
+        shared_app=shared_app,
+        shared_lock=shared_lock,
+        factory=factory,
+        action_timeout_seconds=action_timeout_seconds,
+        input_validators=input_validators,
+        upstream_manager=upstream_manager,
+        external_tools_map=external_tools_map,
+        next_hint=next_hint,
+        action_surface=action_surface,
+    )
+    _register_reset_tool(mcp, store=store, factory=factory)
+    _register_fork_at_tool(mcp, store=store, factory=factory)
+    _register_fork_from_past_tool(mcp, store=store, factory=factory, state_loader=state_loader)
 
     # Surfaces resources as tools for clients without resources/read
     # (IBM Bob Shell, as of mid-2026).
