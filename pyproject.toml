@@ -144,6 +144,17 @@ branch = true
 show_missing = true
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
 
+[tool.vulture]
+# The whitelist file holds justified false positives (e.g. FastAPI path
+# parameters that must exist but are unread). CI fails on any new finding.
+paths = ["src/theodosia", "vulture_whitelist.py"]
+min_confidence = 80
+
+[tool.bandit]
+# MEDIUM and above gate CI (`bandit -r src/theodosia --severity-level medium`).
+# Suppressions in code must carry `# nosec <check-id>` plus a rationale.
+targets = ["src/theodosia"]
+
 # Mutation testing. Starter scope is the security-critical audit ledger; run
 # `uv run mutmut run` to check the suite actually kills mutations there (the
 # property tests in tests/test_property_ledger.py are the intended killers).
