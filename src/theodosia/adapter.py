@@ -720,6 +720,53 @@ async def _race_with_timeout(coro: typing.Awaitable[Any], timeout_seconds: float
         raise
 
 
+async def _execute_astep(
+    app: Application[Any],
+    *,
+    inputs: dict[str, Any],
+    timeout_seconds: float | None,
+    target_action: Any,
+) -> tuple[Any, Any, Any]:
+    """Dispatch one ``astep`` call with timeout and stderr handling.
+
+    Suppress Burr's own stderr traceback display: the action error
+    surfaces as a structured ``action_error`` refusal on the wire, and
+    the traceback would print before that wire response and add noise to
+    the developer's terminal. Set THEODOSIA_VERBOSE=1 to keep it.
+
+    A sync action body would block the event loop, which defeats
+    ``asyncio.wait_for``: the cancellation timer cannot tick while the
+    body is running. Detect sync bodies and run the step in a thread so
+    blocking happens off the main loop and the timeout can fire. The
+    orphaned thread finishes in the background (Python cannot safely
+    kill threads), but the client gets a clean ``ActionTimeoutError``
+    refusal. Async bodies stay on the main loop where ctx-injection
+    works.
+    """
+    if os.environ.get("THEODOSIA_VERBOSE"):
+        stderr_ctx: contextlib.AbstractContextManager[Any] = contextlib.nullcontext()
+    else:
+        stderr_ctx = contextlib.redirect_stderr(io.StringIO())
+    fn = getattr(target_action, "fn", None)
+    is_sync_body = fn is not None and not inspect.iscoroutinefunction(fn)
+    with stderr_ctx:
+        if timeout_seconds is not None and is_sync_body:
+
+            def _thread_runner() -> tuple[Any, Any, Any]:
+                # astep returns None only before the first step; unreachable here.
+                return asyncio.run(app.astep(inputs=inputs))  # type: ignore[return-value]
+
+            return await _race_with_timeout(  # type: ignore[no-any-return]
+                asyncio.to_thread(_thread_runner), timeout_seconds
+            )
+        if timeout_seconds is not None:
+            return await _race_with_timeout(  # type: ignore[no-any-return]
+                app.astep(inputs=inputs), timeout_seconds
+            )
+        # astep is typed Optional; None only occurs before the first step.
+        return await app.astep(inputs=inputs)  # type: ignore[return-value]
+
+
 async def _step_application(
     app: Application[Any],
     action_name: str,
@@ -775,40 +822,12 @@ async def _step_application(
             )
         # astep is typed Optional, but the monkey-patched get_next_action
         # guarantees a non-None return for the client-named action.
-        # Suppress Burr's own stderr traceback display. The action error
-        # surfaces as a structured ``action_error`` refusal on the wire; the
-        # traceback would print before that wire response and add noise to
-        # the developer's terminal. Set THEODOSIA_VERBOSE=1 to keep it.
-        if os.environ.get("THEODOSIA_VERBOSE"):
-            stderr_ctx: contextlib.AbstractContextManager[Any] = contextlib.nullcontext()
-        else:
-            stderr_ctx = contextlib.redirect_stderr(io.StringIO())
-        # A sync action body would block the event loop, which defeats
-        # ``asyncio.wait_for``: the cancellation timer cannot tick while the
-        # body is running. Detect sync bodies and run the step in a thread
-        # so blocking happens off the main loop and the timeout can fire.
-        # The orphaned thread finishes in the background (Python cannot
-        # safely kill threads), but the client gets a clean
-        # ``ActionTimeoutError`` refusal. Async bodies stay on the main
-        # loop where ctx-injection works.
-        fn = getattr(target_action, "fn", None)
-        is_sync_body = fn is not None and not inspect.iscoroutinefunction(fn)
-        with stderr_ctx:
-            if timeout_seconds is not None and is_sync_body:
-
-                def _thread_runner() -> tuple[Any, Any, Any]:
-                    # astep returns None only before the first step; unreachable here.
-                    return asyncio.run(app.astep(inputs=inputs))  # type: ignore[return-value]
-
-                a, result, new_state = await _race_with_timeout(
-                    asyncio.to_thread(_thread_runner), timeout_seconds
-                )
-            elif timeout_seconds is not None:
-                a, result, new_state = await _race_with_timeout(
-                    app.astep(inputs=inputs), timeout_seconds
-                )
-            else:
-                a, result, new_state = await app.astep(inputs=inputs)  # type: ignore[misc]
+        a, result, new_state = await _execute_astep(
+            app,
+            inputs=inputs,
+            timeout_seconds=timeout_seconds,
+            target_action=target_action,
+        )
     except (InvalidTransitionError, ActionExecutionError, ActionTimeoutError):
         raise
     except TimeoutError as exc:
@@ -1374,6 +1393,119 @@ async def _handle_unknown_action(
     return _step_tool_result(response, headline)
 
 
+async def _handle_step_refusal(
+    exc: Exception,
+    *,
+    action: str,
+    inputs: dict[str, Any] | None,
+    seq: int,
+    ctx: Context | None,
+    app: Application[Any],
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+    next_hint: Callable[..., str | None] | None,
+    external_tools_map: dict[str, list[str]],
+) -> ToolResult:
+    """Turn a step-side refusal exception into the structured wire response.
+
+    Reactive hint on refusal -- the FSM teaches the agent why the call
+    was blocked plus what's reachable now.
+    """
+    response, hist_kwargs = _refusal_payload(exc=exc, action_name=action, app=app)
+    state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
+    response = _with_next_guidance(
+        response,
+        state=state_for_hint,
+        valid_next=response.get("valid_next_actions") or [],
+        last_action=action,
+        refusal=response,
+        next_hint=next_hint,
+        external_tools_map=external_tools_map,
+    )
+    _record_history(
+        store,
+        ctx,
+        factory,
+        action=action,
+        inputs=inputs or {},
+        state_after=None,
+        app=app,
+        **hist_kwargs,
+    )
+    headline = _refusal_headline(
+        seq,
+        action,
+        response["error"],
+        detail=response.get("error_type", "") or "",
+    )
+    await _emit_log(ctx, headline)
+    return _step_tool_result(response, headline)
+
+
+async def _finish_step_success(
+    out: dict[str, Any],
+    *,
+    action: str,
+    inputs: dict[str, Any] | None,
+    seq: int,
+    ctx: Context | None,
+    app: Application[Any],
+    entry: _SessionEntry | None,
+    subruns_before: set[str],
+    store: _SessionStore,
+    factory: ApplicationFactory | None,
+    next_hint: Callable[..., str | None] | None,
+    external_tools_map: dict[str, list[str]],
+) -> ToolResult:
+    """Record and shape a successful step's wire response.
+
+    Reactive hint on success -- FSM-derived guidance for the next move.
+    Auto-hint enumerates reachable actions; the domain callback can
+    override with semantic-rich guidance.
+    """
+    new_subruns: list[str] = []
+    if entry is not None:
+        new_subruns = [s for s in entry.subruns if s not in subruns_before]
+    out = _with_next_guidance(
+        out,
+        state=out["state"],
+        valid_next=out["valid_next_actions"],
+        last_action=action,
+        refusal=None,
+        next_hint=next_hint,
+        external_tools_map=external_tools_map,
+    )
+    _record_history(
+        store,
+        ctx,
+        factory,
+        action=action,
+        inputs=inputs or {},
+        state_after=out["state"],
+        valid_next_actions=out["valid_next_actions"],
+        subruns=new_subruns or None,
+        app=app,
+    )
+    headline = _success_headline(seq, action, out["valid_next_actions"])
+    await _emit_log(ctx, headline)
+    return _step_tool_result(out, headline)
+
+
+def _coerce_inputs_arg(inputs: dict[str, Any] | str | None) -> dict[str, Any] | None:
+    """Coerce a JSON-string ``inputs`` into a dict; None when unparseable.
+
+    The schema advertises both forms so clients that validate against the
+    schema don't reject the string-encoded path before sending the request.
+    """
+    if not isinstance(inputs, str):
+        return inputs
+    try:
+        parsed = json.loads(inputs)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _register_step_tool(
     mcp: FastMCP,
     *,
@@ -1413,15 +1545,8 @@ def _register_step_tool(
                 and is parsed into an object before dispatch.
         """
         # Coerce a JSON-string inputs into a dict so the body always
-        # sees the canonical shape. The schema advertises both forms
-        # so clients that validate against the schema don't reject
-        # the string-encoded path before sending the request.
-        if isinstance(inputs, str):
-            try:
-                parsed = json.loads(inputs)
-            except (json.JSONDecodeError, ValueError):
-                parsed = None
-            inputs = parsed if isinstance(parsed, dict) else None
+        # sees the canonical shape.
+        inputs = _coerce_inputs_arg(inputs)
         # Peek the seq that this call's history entry will get, so
         # the ctx.info headline matches the recorded seq.
         seq = len(store.history(ctx.session_id)) if ctx is not None else 0
@@ -1462,71 +1587,37 @@ def _register_step_tool(
             ActionTimeoutError,
             ActionExecutionError,
         ) as exc:
-            response, hist_kwargs = _refusal_payload(exc=exc, action_name=action, app=app)
-            # Reactive hint on refusal -- the FSM teaches the agent
-            # why the call was blocked plus what's reachable now.
-            state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
-            response = _with_next_guidance(
-                response,
-                state=state_for_hint,
-                valid_next=response.get("valid_next_actions") or [],
-                last_action=action,
-                refusal=response,
+            return await _handle_step_refusal(
+                exc,
+                action=action,
+                inputs=inputs,
+                seq=seq,
+                ctx=ctx,
+                app=app,
+                store=store,
+                factory=factory,
                 next_hint=next_hint,
                 external_tools_map=external_tools_map,
             )
-            _record_history(
-                store,
-                ctx,
-                factory,
-                action=action,
-                inputs=inputs or {},
-                state_after=None,
-                app=app,
-                **hist_kwargs,
-            )
-            headline = _refusal_headline(
-                seq,
-                action,
-                response["error"],
-                detail=response.get("error_type", "") or "",
-            )
-            await _emit_log(ctx, headline)
-            return _step_tool_result(response, headline)
         finally:
             _current_session_entry.reset(token)
             _current_fastmcp_context.reset(ctx_token)
             if upstream_token is not None:
                 reset_upstream(upstream_token)
-        new_subruns: list[str] = []
-        if entry is not None:
-            new_subruns = [s for s in entry.subruns if s not in subruns_before]
-        # Reactive hint on success -- FSM-derived guidance for the
-        # next move. Auto-hint enumerates reachable actions; the
-        # domain callback can override with semantic-rich guidance.
-        out = _with_next_guidance(
+        return await _finish_step_success(
             out,
-            state=out["state"],
-            valid_next=out["valid_next_actions"],
-            last_action=action,
-            refusal=None,
+            action=action,
+            inputs=inputs,
+            seq=seq,
+            ctx=ctx,
+            app=app,
+            entry=entry,
+            subruns_before=subruns_before,
+            store=store,
+            factory=factory,
             next_hint=next_hint,
             external_tools_map=external_tools_map,
         )
-        _record_history(
-            store,
-            ctx,
-            factory,
-            action=action,
-            inputs=inputs or {},
-            state_after=out["state"],
-            valid_next_actions=out["valid_next_actions"],
-            subruns=new_subruns or None,
-            app=app,
-        )
-        headline = _success_headline(seq, action, out["valid_next_actions"])
-        await _emit_log(ctx, headline)
-        return _step_tool_result(out, headline)
 
     # Constrain the action parameter to the actual graph's action names so
     # the tool schema advertises an enum. Weak models otherwise hallucinate
@@ -2118,6 +2209,52 @@ def _register_fork_from_past_tool(
     )(fork_from_past)
 
 
+def _wrap_with_hooks(
+    shared_app: Application[Any],
+    factory: ApplicationFactory | None,
+    hooks: list[Any],
+) -> ApplicationFactory | None:
+    """Attach user hooks to the shared app and wrap the factory to do the same.
+
+    Burr's adapter set is a plain list of LifecycleAdapter instances; we
+    append and re-derive the sync/async hook caches. Hooks attached this
+    way fire on the same surfaces as ``ApplicationBuilder.with_hooks(...)``;
+    they are not session-scoped, so place per-session logic inside the hook
+    body if needed.
+    """
+    wrapped = factory
+    if factory is not None:
+        original_factory = factory
+
+        def factory_with_hooks() -> Application[Any]:
+            app_inst = original_factory()
+            _attach_hooks(app_inst, hooks)
+            return app_inst
+
+        wrapped = factory_with_hooks
+    if shared_app is not None:
+        _attach_hooks(shared_app, hooks)
+    return wrapped
+
+
+def _resolve_upstream_manager(upstream: dict[str, Any] | None) -> Any:
+    """Accept an upstream config dict or a pre-built manager.
+
+    A config dict is the common case; ``UpstreamManager`` opens real client
+    sessions for it. Anything with an async ``call`` attribute is treated
+    as a manager (test fakes, custom managers wrapping already-open
+    sessions).
+    """
+    if upstream is None:
+        return None
+    if hasattr(upstream, "call"):
+        return upstream
+    return UpstreamManager(upstream)
+
+
+# COMPLEXITY: CC 14 from optional-feature wiring (hooks, personas, upstream,
+# middleware); each branch is a one-step toggle, and the registration bodies
+# live in the _register_* helpers above.
 def mount(
     application: ApplicationOrFactory | Any,
     *,
@@ -2284,24 +2421,9 @@ def mount(
         _warn_shared_app_mode()
 
     # When user-supplied hooks are provided, wrap shared_app or factory so
-    # the hooks are attached after construction. Burr's adapter set is a
-    # plain list of LifecycleAdapter instances; we append and re-derive the
-    # sync/async hook caches. Hooks attached this way fire on the same
-    # surfaces as ``ApplicationBuilder.with_hooks(...)``; they are not
-    # session-scoped, so place per-session logic inside the hook body if
-    # needed.
+    # the hooks are attached after construction.
     if hooks:
-        if factory is not None:
-            original_factory = factory
-
-            def factory_with_hooks() -> Application[Any]:
-                app_inst = original_factory()
-                _attach_hooks(app_inst, hooks)
-                return app_inst
-
-            factory = factory_with_hooks
-        if shared_app is not None:
-            _attach_hooks(shared_app, hooks)
+        factory = _wrap_with_hooks(shared_app, factory, hooks)
     # Per-session store keyed by ctx.session_id; populated lazily on
     # the first tool call. Lives in closure scope so it's tied to this
     # server instance, not module-global. Holds both the session's
@@ -2319,18 +2441,7 @@ def mount(
     # name exists in the graph; warn (don't fail) on unknowns so a typo
     # doesn't take the server down.
     external_tools_map = _normalize_external_tools(external_tools, shared_app)
-    # Accept either a config dict (the common case; UpstreamManager opens
-    # real client sessions) or a pre-built manager (test fakes, custom
-    # managers wrapping already-open sessions). Anything with an async
-    # ``call`` attribute is treated as a manager; anything else is treated
-    # as a config dict.
-    upstream_manager: Any
-    if upstream is None:
-        upstream_manager = None
-    elif hasattr(upstream, "call"):
-        upstream_manager = upstream
-    else:
-        upstream_manager = UpstreamManager(upstream)
+    upstream_manager = _resolve_upstream_manager(upstream)
     # Static graph summary, computed once. Sub-runs may have their own
     # graphs but this resource describes the top-level one.
     graph_summary = _compute_graph_summary(shared_app, server_name, external_tools_map)

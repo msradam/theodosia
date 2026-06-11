@@ -207,6 +207,8 @@ def _resolve_application(application: Any, report: DoctorReport) -> Application[
     return None
 
 
+# COMPLEXITY: CC 14 — BFS reachability plus two findings with pass/fail
+# variants; the traversal and its reporting belong together.
 def _check_graph_topology(app: Application[Any]) -> list[CheckResult]:
     """Reachability + dead-end detection.
 
@@ -344,6 +346,8 @@ def _check_initial_state_usage(app: Application[Any]) -> list[CheckResult]:
     ]
 
 
+# COMPLEXITY: CC 14 — cross-product of (sync/async body) x (persister,
+# tracker) detection; one check, four detection legs.
 def _check_sync_actions_with_persister(
     application: Any, app: Application[Any]
 ) -> list[CheckResult]:
@@ -406,6 +410,126 @@ def _check_sync_actions_with_persister(
     ]
 
 
+def _probe_tool_surface(tools: set[str]) -> list[CheckResult]:
+    """Wire checks for the native tools and the ResourcesAsTools transform."""
+    results: list[CheckResult] = []
+    missing = {"step", "reset_session", "fork_at"} - tools
+    if missing:
+        results.append(
+            CheckResult(
+                "Runtime: native tools",
+                CheckStatus.FAIL,
+                f"missing tools: {sorted(missing)}",
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "Runtime: native tools",
+                CheckStatus.PASS,
+                f"step + reset_session + fork_at present ({len(tools)} total)",
+            )
+        )
+    ras_missing = {"list_resources", "read_resource"} - tools
+    if ras_missing:
+        results.append(
+            CheckResult(
+                "Runtime: ResourcesAsTools",
+                CheckStatus.FAIL,
+                f"transform tools missing: {sorted(ras_missing)}",
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "Runtime: ResourcesAsTools",
+                CheckStatus.PASS,
+                "list_resources + read_resource exposed",
+            )
+        )
+    return results
+
+
+def _probe_fork_from_past_visibility(app: Application[Any], tools: set[str]) -> CheckResult:
+    """fork_from_past visibility is conditional; report which path applies."""
+    try:
+        from burr.tracking.client import LocalTrackingClient
+
+        has_tracker = isinstance(getattr(app, "_tracker", None), LocalTrackingClient)
+    except ImportError:
+        has_tracker = False
+    ffp_visible = "fork_from_past" in tools
+    if has_tracker and ffp_visible:
+        return CheckResult(
+            "Runtime: fork_from_past visibility",
+            CheckStatus.PASS,
+            "tracker attached and fork_from_past visible",
+        )
+    if not has_tracker and not ffp_visible:
+        return CheckResult(
+            "Runtime: fork_from_past visibility",
+            CheckStatus.PASS,
+            "no tracker; fork_from_past hidden by Visibility transform",
+        )
+    return CheckResult(
+        "Runtime: fork_from_past visibility",
+        CheckStatus.WARN,
+        f"visibility mismatch (has_tracker={has_tracker}, visible={ffp_visible})",
+    )
+
+
+def _probe_resource_catalog(resource_uris: set[str]) -> CheckResult:
+    """Check that every theodosia:// resource is registered."""
+    expected_resources = {
+        "theodosia://graph",
+        "theodosia://state",
+        "theodosia://next",
+        "theodosia://history",
+        "theodosia://trace",
+        "theodosia://session",
+        "theodosia://subruns",
+    }
+    r_missing = expected_resources - resource_uris
+    if r_missing:
+        return CheckResult(
+            "Runtime: resources",
+            CheckStatus.FAIL,
+            f"missing resources: {sorted(r_missing)}",
+        )
+    return CheckResult(
+        "Runtime: resources",
+        CheckStatus.PASS,
+        f"{len(expected_resources)} theodosia:// resources registered",
+    )
+
+
+def _probe_step_result_shape(r: Any) -> CheckResult:
+    """Check a step result's wire shape: headline, json, structured_content."""
+    problems: list[str] = []
+    if len(r.content) < 2:
+        problems.append(f"expected >=2 content blocks (headline + json), got {len(r.content)}")
+    elif not r.content[0].text.startswith("Step "):
+        problems.append(f"content[0] doesn't look like a headline: {r.content[0].text[:60]!r}")
+    if r.structured_content is None:
+        problems.append("structured_content is None (expected populated dict)")
+    elif not isinstance(r.structured_content, dict):
+        problems.append(
+            f"structured_content has wrong shape: {type(r.structured_content).__name__}"
+        )
+    if problems:
+        return CheckResult(
+            "Runtime: step result shape",
+            CheckStatus.FAIL,
+            f"{len(problems)} shape issue(s)",
+            details=problems,
+        )
+    return CheckResult(
+        "Runtime: step result shape",
+        CheckStatus.PASS,
+        "content[0]=headline, content[1]=json, structured_content=dict",
+    )
+
+
 def _check_runtime(application: Any, app: Application[Any]) -> list[CheckResult]:
     """Mount the server in-process and probe its wire shape.
 
@@ -438,104 +562,11 @@ def _check_runtime(application: Any, app: Application[Any]) -> list[CheckResult]
 
         async with Client(server) as client:
             tools = {t.name for t in await client.list_tools()}
-            expected_native = {"step", "reset_session", "fork_at"}
-            missing = expected_native - tools
-            if missing:
-                results.append(
-                    CheckResult(
-                        "Runtime: native tools",
-                        CheckStatus.FAIL,
-                        f"missing tools: {sorted(missing)}",
-                    )
-                )
-            else:
-                results.append(
-                    CheckResult(
-                        "Runtime: native tools",
-                        CheckStatus.PASS,
-                        f"step + reset_session + fork_at present ({len(tools)} total)",
-                    )
-                )
-
-            ras_missing = {"list_resources", "read_resource"} - tools
-            if ras_missing:
-                results.append(
-                    CheckResult(
-                        "Runtime: ResourcesAsTools",
-                        CheckStatus.FAIL,
-                        f"transform tools missing: {sorted(ras_missing)}",
-                    )
-                )
-            else:
-                results.append(
-                    CheckResult(
-                        "Runtime: ResourcesAsTools",
-                        CheckStatus.PASS,
-                        "list_resources + read_resource exposed",
-                    )
-                )
-
-            # fork_from_past visibility is conditional; report which path applies.
-            try:
-                from burr.tracking.client import LocalTrackingClient
-
-                has_tracker = isinstance(getattr(app, "_tracker", None), LocalTrackingClient)
-            except ImportError:
-                has_tracker = False
-            ffp_visible = "fork_from_past" in tools
-            if has_tracker and ffp_visible:
-                results.append(
-                    CheckResult(
-                        "Runtime: fork_from_past visibility",
-                        CheckStatus.PASS,
-                        "tracker attached and fork_from_past visible",
-                    )
-                )
-            elif not has_tracker and not ffp_visible:
-                results.append(
-                    CheckResult(
-                        "Runtime: fork_from_past visibility",
-                        CheckStatus.PASS,
-                        "no tracker; fork_from_past hidden by Visibility transform",
-                    )
-                )
-            else:
-                results.append(
-                    CheckResult(
-                        "Runtime: fork_from_past visibility",
-                        CheckStatus.WARN,
-                        (f"visibility mismatch (has_tracker={has_tracker}, visible={ffp_visible})"),
-                    )
-                )
+            results.extend(_probe_tool_surface(tools))
+            results.append(_probe_fork_from_past_visibility(app, tools))
 
             resources = await client.list_resources()
-            resource_uris = {str(r.uri) for r in resources}
-            expected_resources = {
-                "theodosia://graph",
-                "theodosia://state",
-                "theodosia://next",
-                "theodosia://history",
-                "theodosia://trace",
-                "theodosia://session",
-                "theodosia://subruns",
-            }
-            r_missing = expected_resources - resource_uris
-            if r_missing:
-                results.append(
-                    CheckResult(
-                        "Runtime: resources",
-                        CheckStatus.FAIL,
-                        f"missing resources: {sorted(r_missing)}",
-                    )
-                )
-            else:
-                results.append(
-                    CheckResult(
-                        "Runtime: resources",
-                        CheckStatus.PASS,
-                        f"{len(expected_resources)} theodosia:// resources registered",
-                    )
-                )
+            results.append(_probe_resource_catalog({str(r.uri) for r in resources}))
 
             # Probe step with a deliberately unknown action. We're
             # checking the wire shape (headline + json + structured),
@@ -545,38 +576,7 @@ def _check_runtime(application: Any, app: Application[Any]) -> list[CheckResult]
                 "step",
                 {"action": "__doctor_probe__", "inputs": {}},
             )
-            problems: list[str] = []
-            if len(r.content) < 2:
-                problems.append(
-                    f"expected >=2 content blocks (headline + json), got {len(r.content)}"
-                )
-            elif not r.content[0].text.startswith("Step "):
-                problems.append(
-                    f"content[0] doesn't look like a headline: {r.content[0].text[:60]!r}"
-                )
-            if r.structured_content is None:
-                problems.append("structured_content is None (expected populated dict)")
-            elif not isinstance(r.structured_content, dict):
-                problems.append(
-                    f"structured_content has wrong shape: {type(r.structured_content).__name__}"
-                )
-            if problems:
-                results.append(
-                    CheckResult(
-                        "Runtime: step result shape",
-                        CheckStatus.FAIL,
-                        f"{len(problems)} shape issue(s)",
-                        details=problems,
-                    )
-                )
-            else:
-                results.append(
-                    CheckResult(
-                        "Runtime: step result shape",
-                        CheckStatus.PASS,
-                        "content[0]=headline, content[1]=json, structured_content=dict",
-                    )
-                )
+            results.append(_probe_step_result_shape(r))
 
         return results
 
@@ -603,6 +603,8 @@ _STATUS_TAG = {
 }
 
 
+# COMPLEXITY: CC 12 — verbosity x status rendering matrix for the report;
+# a formatter dispatch table would obscure the output layout.
 def format_report(report: DoctorReport, verbose: bool = False) -> str:
     """Render a :class:`DoctorReport` for the CLI.
 

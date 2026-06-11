@@ -112,6 +112,38 @@ class ToolSpec:
     validator: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None
 
 
+def _decorate_wrapper(
+    wrapper: Callable[..., Any],
+    *,
+    tool_fn: Callable[..., Any],
+    tool_name: str,
+    tool_doc: str | None,
+    spec: ToolSpec,
+    new_sig: inspect.Signature,
+) -> Callable[..., Any]:
+    """Stamp name/doc/signature/override metadata onto a lifted wrapper.
+
+    The wrapper's ``__signature__`` and ``__annotations__`` are set
+    explicitly because theodosia's later schema generation reintrospects
+    them when mounting the resulting Application. Per-tool overrides are
+    stashed as discoverable attributes; ``mount`` reads them off each
+    action's ``fn``.
+    """
+    wrapper.__name__ = spec.rename or tool_name
+    wrapper.__qualname__ = wrapper.__name__
+    wrapper.__doc__ = tool_doc or f"Lifted FastMCP tool {tool_name!r}."
+    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+    # Copy annotations from the original function so type hints survive
+    # for downstream schema generation. ``state`` gets no annotation.
+    wrapper.__annotations__ = dict(getattr(tool_fn, "__annotations__", {}))
+    wrapper.__annotations__.pop("return", None)
+    if spec.timeout_seconds is not None:
+        wrapper._theodosia_timeout_seconds = spec.timeout_seconds  # type: ignore[attr-defined]
+    if spec.validator is not None:
+        wrapper._theodosia_validator = spec.validator  # type: ignore[attr-defined]
+    return wrapper
+
+
 def _build_wrapper(
     tool_fn: Callable[..., Any],
     tool_name: str,
@@ -162,22 +194,14 @@ def _build_wrapper(
             result = tool_fn(**kwargs)
             return _apply_result(state, result)
 
-    wrapper.__name__ = spec.rename or tool_name
-    wrapper.__qualname__ = wrapper.__name__
-    wrapper.__doc__ = tool_doc or f"Lifted FastMCP tool {tool_name!r}."
-    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
-    # Copy annotations from the original function so type hints survive
-    # for downstream schema generation. ``state`` gets no annotation.
-    wrapper.__annotations__ = dict(getattr(tool_fn, "__annotations__", {}))
-    wrapper.__annotations__.pop("return", None)
-    # Stash per-tool overrides on the wrapper as discoverable
-    # attributes. ``mount`` reads them off each action's ``fn`` to
-    # pick up these per-action settings.
-    if spec.timeout_seconds is not None:
-        wrapper._theodosia_timeout_seconds = spec.timeout_seconds  # type: ignore[attr-defined]
-    if spec.validator is not None:
-        wrapper._theodosia_validator = spec.validator  # type: ignore[attr-defined]
-    return wrapper
+    return _decorate_wrapper(
+        wrapper,
+        tool_fn=tool_fn,
+        tool_name=tool_name,
+        tool_doc=tool_doc,
+        spec=spec,
+        new_sig=new_sig,
+    )
 
 
 def _normalize_transitions(

@@ -170,6 +170,8 @@ def _graph_renderable(
     return Group(*lines)
 
 
+# COMPLEXITY: CC 13 — glyph/layout decisions per node class (entry, terminal,
+# branch, visited) in one pass over the graph.
 def render(
     target: Annotated[
         str | None,

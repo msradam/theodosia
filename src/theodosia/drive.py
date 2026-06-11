@@ -91,6 +91,80 @@ def _default_anthropic_client() -> AsyncAnthropic:
     return AsyncAnthropic()
 
 
+async def _build_system_prompt(client: Any, system: str | None) -> str:
+    """Compose the driver's system prompt: caller text + FSM cold-start context.
+
+    The graph topology, initial state, and reachable actions are the
+    equivalent of an LLM agent reading ``theodosia://graph`` at session
+    start.
+    """
+    graph_text = await _format_resource(client, "theodosia://graph")
+    state_text = await _format_resource(client, "theodosia://state")
+    next_text = await _format_resource(client, "theodosia://next")
+
+    system_lines: list[str] = []
+    if system:
+        system_lines.append(system)
+    system_lines.append(
+        "You are driving a state machine served over MCP. Use the four "
+        "tools to take exactly one action at a time. Every refusal "
+        "carries `valid_next_actions` you can recover from."
+    )
+    system_lines.extend(
+        (
+            "",
+            "## FSM graph",
+            graph_text,
+            "",
+            "## Current state",
+            state_text,
+            "",
+            "## Reachable actions",
+            next_text,
+        )
+    )
+    return "\n".join(system_lines)
+
+
+async def _run_tool_blocks(
+    client: Any,
+    tool_uses: list[Any],
+    transcript: dict[str, Any],
+    on_step: Any,
+) -> list[dict[str, Any]]:
+    """Execute each tool_use block; record turns and build tool_result blocks."""
+    tool_results: list[dict[str, Any]] = []
+    for block in tool_uses:
+        args = block.input or {}
+        try:
+            r = await client.call_tool(block.name, args)
+            payload = r.structured_content or {"content": str(r.content)}
+        except Exception as exc:
+            payload = {"error": "tool_invocation_failed", "detail": str(exc)}
+        turn = {"action": args.get("action") or block.name, "result": payload}
+        transcript["turns"].append(turn)
+        if on_step is not None:
+            await on_step(turn["action"], payload)
+        tool_results.append(
+            {
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": json.dumps(payload, default=str),
+            }
+        )
+    return tool_results
+
+
+async def _fsm_is_terminal(client: Any) -> bool:
+    """True when ``theodosia://next`` reports no reachable actions."""
+    next_text = await _format_resource(client, "theodosia://next")
+    try:
+        reachable = json.loads(next_text)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(reachable, list) and not reachable
+
+
 async def drive_claude(
     server: FastMCP,
     anthropic: AsyncAnthropic | None = None,
@@ -132,35 +206,7 @@ async def drive_claude(
         mcp_tools = await client.list_tools()
         tools = _mcp_tools_to_anthropic(mcp_tools)
 
-        # Cold-start context: graph topology + initial state + reachable
-        # actions. This is the equivalent of an LLM agent reading
-        # theodosia://graph at session start.
-        graph_text = await _format_resource(client, "theodosia://graph")
-        state_text = await _format_resource(client, "theodosia://state")
-        next_text = await _format_resource(client, "theodosia://next")
-
-        system_lines: list[str] = []
-        if system:
-            system_lines.append(system)
-        system_lines.append(
-            "You are driving a state machine served over MCP. Use the four "
-            "tools to take exactly one action at a time. Every refusal "
-            "carries `valid_next_actions` you can recover from."
-        )
-        system_lines.extend(
-            (
-                "",
-                "## FSM graph",
-                graph_text,
-                "",
-                "## Current state",
-                state_text,
-                "",
-                "## Reachable actions",
-                next_text,
-            )
-        )
-        system_prompt = "\n".join(system_lines)
+        system_prompt = await _build_system_prompt(client, system)
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
 
@@ -181,36 +227,12 @@ async def drive_claude(
                 transcript["stopped_on"] = "text_only"
                 break
 
-            tool_results: list[dict[str, Any]] = []
-            for block in tool_uses:
-                args = block.input or {}
-                try:
-                    r = await client.call_tool(block.name, args)
-                    payload = r.structured_content or {"content": str(r.content)}
-                except Exception as exc:
-                    payload = {"error": "tool_invocation_failed", "detail": str(exc)}
-                turn = {"action": args.get("action") or block.name, "result": payload}
-                transcript["turns"].append(turn)
-                if on_step is not None:
-                    await on_step(turn["action"], payload)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(payload, default=str),
-                    }
-                )
+            tool_results = await _run_tool_blocks(client, tool_uses, transcript, on_step)
             messages.append({"role": "user", "content": tool_results})
 
-            if stop_on_terminal:
-                next_text = await _format_resource(client, "theodosia://next")
-                try:
-                    reachable = json.loads(next_text)
-                except json.JSONDecodeError:
-                    reachable = []
-                if isinstance(reachable, list) and not reachable:
-                    transcript["stopped_on"] = "terminal"
-                    break
+            if stop_on_terminal and await _fsm_is_terminal(client):
+                transcript["stopped_on"] = "terminal"
+                break
 
         state_text = await _format_resource(client, "theodosia://state")
         try:

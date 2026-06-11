@@ -245,6 +245,24 @@ def _input_schemas(action: Action) -> dict[str, dict[str, Any]]:
     return schemas
 
 
+def _fn_signature_and_hints(
+    fn: Any,
+) -> tuple[inspect.Signature | None, dict[str, Any]]:
+    """Best-effort signature + resolved type hints for an action fn."""
+    sig: inspect.Signature | None = None
+    resolved_hints: dict[str, Any] = {}
+    if fn is not None:
+        try:
+            sig = inspect.signature(fn)
+        except (TypeError, ValueError):
+            sig = None
+        try:
+            resolved_hints = typing.get_type_hints(fn)
+        except Exception:
+            resolved_hints = {}
+    return sig, resolved_hints
+
+
 def _action_signature_params(action: Action) -> list[inspect.Parameter]:
     """Synthesise a Parameter list for an action's MCP tool signature.
 
@@ -258,18 +276,7 @@ def _action_signature_params(action: Action) -> list[inspect.Parameter]:
     than strings, which FastMCP's pydantic-based schema generation requires.
     """
     required, optional = _action_inputs(action)
-    fn = getattr(action, "fn", None)
-    sig: inspect.Signature | None = None
-    resolved_hints: dict[str, Any] = {}
-    if fn is not None:
-        try:
-            sig = inspect.signature(fn)
-        except (TypeError, ValueError):
-            sig = None
-        try:
-            resolved_hints = typing.get_type_hints(fn)
-        except Exception:
-            resolved_hints = {}
+    sig, resolved_hints = _fn_signature_and_hints(getattr(action, "fn", None))
 
     def _annotation_for(name: str) -> Any:
         if name in resolved_hints:
@@ -280,6 +287,13 @@ def _action_signature_params(action: Action) -> list[inspect.Parameter]:
                 return p.annotation
         return str
 
+    def _default_for(name: str) -> Any:
+        if sig and name in sig.parameters:
+            p = sig.parameters[name]
+            if p.default is not inspect.Parameter.empty:
+                return p.default
+        return None
+
     params: list[inspect.Parameter] = [
         inspect.Parameter(
             name,
@@ -288,18 +302,13 @@ def _action_signature_params(action: Action) -> list[inspect.Parameter]:
         )
         for name in required
     ]
-    for name in optional:
-        default: Any = None
-        if sig and name in sig.parameters:
-            p = sig.parameters[name]
-            if p.default is not inspect.Parameter.empty:
-                default = p.default
-        params.append(
-            inspect.Parameter(
-                name,
-                inspect.Parameter.KEYWORD_ONLY,
-                default=default,
-                annotation=_annotation_for(name),
-            )
+    params.extend(
+        inspect.Parameter(
+            name,
+            inspect.Parameter.KEYWORD_ONLY,
+            default=_default_for(name),
+            annotation=_annotation_for(name),
         )
+        for name in optional
+    )
     return params

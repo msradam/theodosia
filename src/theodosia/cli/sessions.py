@@ -72,6 +72,8 @@ def _build_sessions_table(proj_entry: dict[str, Any]) -> Table:
     return table
 
 
+# COMPLEXITY: CC 12 — filter/limit/json/empty-store rendering combinations
+# of one listing command.
 def sessions_ls(
     home: Annotated[
         Path | None,
@@ -217,6 +219,51 @@ def _diff_state_dicts(
     return only_left, only_right, changed
 
 
+def _print_action_path_diff(actions_a: list[str], actions_b: list[str]) -> None:
+    """Render the action-path comparison section of ``sessions diff``."""
+    if actions_a == actions_b:
+        console.print("\n[muted]action paths identical[/]")
+        return
+    console.print("\n[header]action path[/]")
+    common = 0
+    for a, b in zip(actions_a, actions_b, strict=False):
+        if a != b:
+            break
+        common += 1
+    console.print(f"  [muted]common prefix:[/] {common} step(s)")
+    if common < len(actions_a):
+        console.print(f"  [muted]A continues:[/] {' → '.join(actions_a[common:])}")
+    if common < len(actions_b):
+        console.print(f"  [muted]B continues:[/] {' → '.join(actions_b[common:])}")
+
+
+def _print_state_diff(
+    state_a: dict[str, Any],
+    state_b: dict[str, Any],
+    only_a: list[str],
+    only_b: list[str],
+    changed: list[tuple[str, Any, Any]],
+) -> None:
+    """Render the final-state comparison section of ``sessions diff``."""
+    console.print("\n[header]final state[/]")
+    if not (only_a or only_b or changed):
+        console.print("  [muted](identical)[/]")
+        return
+    for key, va, vb in changed:
+        console.print(
+            Text.assemble(
+                (f"  {key}: ", "muted"),
+                (str(va), "err"),
+                (" → ", "muted"),
+                (str(vb), "ok"),
+            )
+        )
+    for key in only_a:
+        console.print(Text.assemble((f"  -{key}: ", "err"), (str(state_a[key]), "muted")))
+    for key in only_b:
+        console.print(Text.assemble((f"  +{key}: ", "ok"), (str(state_b[key]), "muted")))
+
+
 def sessions_diff(
     app_id_a: Annotated[
         str,
@@ -289,39 +336,8 @@ def sessions_diff(
         )
     )
 
-    if actions_a != actions_b:
-        console.print("\n[header]action path[/]")
-        common = 0
-        for a, b in zip(actions_a, actions_b, strict=False):
-            if a == b:
-                common += 1
-            else:
-                break
-        console.print(f"  [muted]common prefix:[/] {common} step(s)")
-        if common < len(actions_a):
-            console.print(f"  [muted]A continues:[/] {' → '.join(actions_a[common:])}")
-        if common < len(actions_b):
-            console.print(f"  [muted]B continues:[/] {' → '.join(actions_b[common:])}")
-    else:
-        console.print("\n[muted]action paths identical[/]")
-
-    console.print("\n[header]final state[/]")
-    if not (only_a or only_b or changed):
-        console.print("  [muted](identical)[/]")
-        return
-    for key, va, vb in changed:
-        console.print(
-            Text.assemble(
-                (f"  {key}: ", "muted"),
-                (str(va), "err"),
-                (" → ", "muted"),
-                (str(vb), "ok"),
-            )
-        )
-    for key in only_a:
-        console.print(Text.assemble((f"  -{key}: ", "err"), (str(state_a[key]), "muted")))
-    for key in only_b:
-        console.print(Text.assemble((f"  +{key}: ", "ok"), (str(state_b[key]), "muted")))
+    _print_action_path_diff(actions_a, actions_b)
+    _print_state_diff(state_a, state_b, only_a, only_b, changed)
 
 
 def _tail(
@@ -423,6 +439,28 @@ def watch(
     _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval, once=once)
 
 
+def _print_log_row(r: Any, detail: str, *, plain: bool) -> None:
+    """Render one ``logs`` line, either pipe-friendly plain or rich-marked."""
+    ms = "" if r.duration_ms is None else f"{r.duration_ms:.0f}ms"
+    if plain:
+        mark = {"ok": "OK", "error": "ERR", "running": "...."}[r.status]
+        console.print(
+            f"{r.seq:>3}  {_short_ts(r.started)}  {mark:<4} {r.action:<22} {ms:>7}  {detail}",
+            highlight=False,
+            markup=False,
+        )
+        return
+    line = Text.assemble(
+        (f"{r.seq:>3} ", "muted"),
+        (f"{_short_ts(r.started)} ", "subtle"),
+        _status_text(r.status),
+        (f" {r.action:<22} ", "action"),
+        (f"{ms:>7}  ", "muted"),
+        (detail, "err" if r.status == "error" else "subtle"),
+    )
+    console.print(line)
+
+
 def logs(
     app_id: Annotated[
         str | None,
@@ -464,7 +502,6 @@ def logs(
         return
     prev: dict[str, Any] | None = None
     for r in rows:
-        ms = "" if r.duration_ms is None else f"{r.duration_ms:.0f}ms"
         detail = (
             r.error_summary or "error"
             if r.status == "error"
@@ -472,21 +509,4 @@ def logs(
         )
         if r.status != "error":
             prev = r.state_summary
-        if plain:
-            mark = {"ok": "OK", "error": "ERR", "running": "...."}[r.status]
-            console.print(
-                f"{r.seq:>3}  {_short_ts(r.started)}  {mark:<4} {r.action:<22} {ms:>7}  {detail}",
-                highlight=False,
-                markup=False,
-            )
-        else:
-            glyph = _status_text(r.status)
-            line = Text.assemble(
-                (f"{r.seq:>3} ", "muted"),
-                (f"{_short_ts(r.started)} ", "subtle"),
-                glyph,
-                (f" {r.action:<22} ", "action"),
-                (f"{ms:>7}  ", "muted"),
-                (detail, "err" if r.status == "error" else "subtle"),
-            )
-            console.print(line)
+        _print_log_row(r, detail, plain=plain)

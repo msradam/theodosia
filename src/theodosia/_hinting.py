@@ -38,6 +38,9 @@ def _auto_hint_success(action: str, valid_next: list[str]) -> str | None:
     return f"Reachable actions from current state: {head}{more}."
 
 
+# COMPLEXITY: CC 13 — one branch per refusal class (unknown action, invalid
+# transition, validation, timeout, action error); a dispatch table would hide
+# the per-class message wording this function exists to choose.
 def _auto_hint_refusal(refusal: dict[str, Any]) -> str | None:
     """Structural hint after a refusal.
 

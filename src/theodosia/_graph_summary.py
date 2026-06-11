@@ -26,6 +26,65 @@ from burr.core import Application
 from theodosia._introspect import _action_inputs, _input_schemas
 
 
+def _first_doc_line(action: Any) -> str:
+    """First line of an action fn's docstring, or empty string."""
+    fn = getattr(action, "fn", None)
+    doc = (fn.__doc__ or "").strip() if fn is not None and fn.__doc__ else ""
+    return doc.splitlines()[0] if doc else ""
+
+
+def _condition_expr(transition: Any) -> str | None:
+    """The printed condition expression for an edge, or None when unconditional.
+
+    Burr's Condition.expr produces a condition whose ``name`` is the printed
+    expression, which is exactly what a model needs to know when to take the
+    edge. ``default`` means unconditional.
+    """
+    try:
+        cond = transition.condition
+        cond_name = getattr(cond, "_name", None) or getattr(cond, "name", None)
+        if cond_name and cond_name != "default":
+            return str(cond_name)
+    except Exception:
+        return None
+    return None
+
+
+def _action_meta(action: Any, ext_map: dict[str, list[str]]) -> dict[str, Any]:
+    """Per-action metadata block for ``theodosia://graph``."""
+    required, optional = _action_inputs(action)
+    fn = getattr(action, "fn", None)
+    doc = (fn.__doc__ or "").strip() if fn is not None and fn.__doc__ else ""
+    meta: dict[str, Any] = {
+        "name": action.name,
+        "description": doc,
+        "reads": list(action.reads or []),
+        "writes": list(action.writes or []),
+        "required_inputs": required,
+        "optional_inputs": optional,
+        "input_schemas": _input_schemas(action),
+    }
+    if ext_map.get(action.name):
+        meta["external_tools"] = ext_map[action.name]
+    return meta
+
+
+def _state_json_schema(app: Application[Any]) -> dict[str, Any] | None:
+    """Pydantic JSON schema for state when Burr's PydanticTypingSystem is wired.
+
+    Untyped state shows up as None; consumers fall back to inferring shape
+    from per-action ``reads``/``writes``.
+    """
+    try:
+        ts = app.state.typing_system
+        state_type = ts.state_type() if hasattr(ts, "state_type") else None
+        if state_type is not None and hasattr(state_type, "model_json_schema"):
+            return state_type.model_json_schema()  # type: ignore[no-any-return]
+    except Exception:
+        return None
+    return None
+
+
 def _render_action_surface(app: Application[Any]) -> str:
     """Render a compact text summary of the FSM's action + transition surface.
 
@@ -43,18 +102,13 @@ def _render_action_surface(app: Application[Any]) -> str:
     else:
         lines.append("Actions:")
     for a in app.graph.actions:
-        fn = getattr(a, "fn", None)
-        doc = (fn.__doc__ or "").strip() if fn is not None and fn.__doc__ else ""
-        first = doc.splitlines()[0] if doc else ""
-        if first:
-            lines.append(f"  - {a.name}: {first}")
-        else:
-            lines.append(f"  - {a.name}")
+        first = _first_doc_line(a)
+        lines.append(f"  - {a.name}: {first}" if first else f"  - {a.name}")
 
     lines.extend(("", "Transitions:"))
     for t in app.graph.transitions:
-        cond = getattr(t.condition, "_name", None) or getattr(t.condition, "name", None)
-        if cond and cond != "default":
+        cond = _condition_expr(t)
+        if cond:
             lines.append(f"  - {t.from_.name} -> {t.to.name}  (when: {cond})")
         else:
             lines.append(f"  - {t.from_.name} -> {t.to.name}")
@@ -111,59 +165,12 @@ def _compute_graph_summary(
     topology without trial-and-error or repeated state probes.
     """
     ext_map = external_tools_map or {}
-    actions_meta: list[dict[str, Any]] = []
-    for a in app.graph.actions:
-        required, optional = _action_inputs(a)
-        fn = getattr(a, "fn", None)
-        doc = (fn.__doc__ or "").strip() if fn is not None and fn.__doc__ else ""
-        input_schemas = _input_schemas(a)
-        meta: dict[str, Any] = {
-            "name": a.name,
-            "description": doc,
-            "reads": list(a.reads or []),
-            "writes": list(a.writes or []),
-            "required_inputs": required,
-            "optional_inputs": optional,
-            "input_schemas": input_schemas,
-        }
-        if ext_map.get(a.name):
-            meta["external_tools"] = ext_map[a.name]
-        actions_meta.append(meta)
-
-    transitions_meta: list[dict[str, Any]] = []
-    for t in app.graph.transitions:
-        cond_expr: str | None = None
-        try:
-            cond = t.condition
-            cond_name = getattr(cond, "_name", None) or getattr(cond, "name", None)
-            # Burr's Condition.expr produces a condition whose `name`
-            # is the printed expression, which is exactly what a model
-            # needs to know when to take the edge. ``default`` means
-            # unconditional.
-            if cond_name and cond_name != "default":
-                cond_expr = cond_name
-        except Exception:
-            cond_expr = None
-        transitions_meta.append(
-            {
-                "from": t.from_.name,
-                "to": t.to.name,
-                "condition": cond_expr,
-            }
-        )
-
-    # Optionally surface the Pydantic JSON schema for state if the
-    # user wired up Burr's PydanticTypingSystem. Untyped state shows
-    # up as None here; consumers fall back to inferring shape from
-    # per-action ``reads``/``writes``.
-    state_schema: dict[str, Any] | None = None
-    try:
-        ts = app.state.typing_system
-        state_type = ts.state_type() if hasattr(ts, "state_type") else None
-        if state_type is not None and hasattr(state_type, "model_json_schema"):
-            state_schema = state_type.model_json_schema()
-    except Exception:
-        state_schema = None
+    actions_meta = [_action_meta(a, ext_map) for a in app.graph.actions]
+    transitions_meta = [
+        {"from": t.from_.name, "to": t.to.name, "condition": _condition_expr(t)}
+        for t in app.graph.transitions
+    ]
+    state_schema = _state_json_schema(app)
 
     return {
         "name": server_name,

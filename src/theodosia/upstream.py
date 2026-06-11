@@ -89,6 +89,8 @@ def _nested_error(payload: Any, depth: int = 3) -> str | None:
     return None
 
 
+# COMPLEXITY: CC 11 — the OK/ERROR/MALFORMED truth table over payload shapes;
+# the branches ARE the specification and read top-down.
 def classify_payload(name: str, payload: Any, *, expect: str = "any") -> SourceResult:
     """Classify a returned payload. ``expect`` is one of ``any``, ``list``, ``dict``.
 

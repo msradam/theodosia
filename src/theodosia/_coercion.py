@@ -36,6 +36,32 @@ def _expects_object_or_array(prop_schema: dict[str, Any]) -> bool:
     return False
 
 
+def _coerce_string_args(
+    args: dict[str, Any], param_schemas: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Re-parse JSON-string values whose declared schema is object/array.
+
+    Returns the replacement arguments dict, or ``None`` when nothing
+    needed coercion (so the caller can skip rebuilding the message).
+    """
+    new_args: dict[str, Any] | None = None
+    for key, value in args.items():
+        if not isinstance(value, str):
+            continue
+        if not _expects_object_or_array(param_schemas.get(key, {})):
+            continue
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(parsed, (dict, list)):
+            continue
+        if new_args is None:
+            new_args = dict(args)
+        new_args[key] = parsed
+    return new_args
+
+
 def _build_coercion_middleware() -> Any:
     """Build the JSON-string-to-object coercion middleware.
 
@@ -90,22 +116,7 @@ def _build_coercion_middleware() -> Any:
             if not param_schemas:
                 return await call_next(context)
 
-            new_args: dict[str, Any] | None = None
-            for key, value in args.items():
-                if not isinstance(value, str):
-                    continue
-                if not _expects_object_or_array(param_schemas.get(key, {})):
-                    continue
-                try:
-                    parsed = json.loads(value)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                if not isinstance(parsed, (dict, list)):
-                    continue
-                if new_args is None:
-                    new_args = dict(args)
-                new_args[key] = parsed
-
+            new_args = _coerce_string_args(args, param_schemas)
             if new_args is not None:
                 new_msg = msg.model_copy(update={"arguments": new_args})
                 context = context.copy(message=new_msg)

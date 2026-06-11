@@ -174,6 +174,8 @@ class Persona:
 PersonaSource = str | Path | dict[str, str] | list["Persona"] | None
 
 
+# COMPLEXITY: CC 12 — one branch per accepted source shape (None, dir, file,
+# dict, list of Persona); the function is the documented shape-normaliser.
 def load_personas(source: PersonaSource) -> dict[str, Persona]:
     """Load personas from one of several source shapes.
 

@@ -59,6 +59,8 @@ class Assembly:
             raise ValueError(f"assembly YAML must be a mapping; got {type(data).__name__}")
         return cls.from_dict(data)
 
+    # COMPLEXITY: CC 11 — field-by-field optional serialisation; splitting
+    # would scatter the YAML schema across helpers.
     def to_yaml(self, path: str | Path | None = None) -> str:
         """Serialize this assembly to YAML. Writes to ``path`` if given; always returns the text.
 

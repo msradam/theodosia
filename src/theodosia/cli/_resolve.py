@@ -22,6 +22,8 @@ def _looks_like_path(s: str) -> bool:
     return s.endswith(".py") or "/" in s or os.sep in s
 
 
+# COMPLEXITY: CC 11 — one branch per accepted target spec (module:attr,
+# file path, bare module) plus their error messages.
 def _import_target(target: str, extra_paths: list[str] | None = None) -> Any:
     extra = list(extra_paths or [])
     if ":" not in target:

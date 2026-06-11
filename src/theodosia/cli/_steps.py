@@ -76,20 +76,14 @@ def _terminal_state_may_be_stale(steps: list[StepRow]) -> bool:
     return bool(raw.get("__PRIOR_STEP") != last.action)
 
 
-def _read_steps(log_path: Path) -> list[StepRow]:
-    """Pair begin/end entries from a Burr tracker JSONL into rows.
-
-    Works around Burr's sync-action staleness: when an ``@action`` body is
-    sync, ``post_run_step`` (the source of ``end_entry``) fires with
-    pre-step state. We detect this per-row by checking ``__PRIOR_STEP`` in
-    the recorded state. If it does not match the row's action, we scan
-    forward for the entry whose ``__PRIOR_STEP`` does match. That entry's
-    state is the true post-step state for this row.
-    """
+def _scan_tracker_log(
+    log_path: Path,
+) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
+    """Read a Burr tracker JSONL into ``(begins, ends)`` keyed by sequence id."""
     begins: dict[int, dict[str, Any]] = {}
     ends: dict[int, dict[str, Any]] = {}
     if not log_path.exists():
-        return []
+        return begins, ends
     with log_path.open() as f:
         for line in f:
             line = line.strip()
@@ -106,6 +100,42 @@ def _read_steps(log_path: Path) -> list[StepRow]:
                 begins[seq] = rec
             elif rec.get("type") == "end_entry":
                 ends[seq] = rec
+    return begins, ends
+
+
+def _completed_row(
+    seq: int,
+    b: dict[str, Any],
+    e: dict[str, Any],
+    state: dict[str, Any],
+) -> StepRow:
+    """Build the row for a step with both begin and end entries."""
+    started = b.get("start_time", "")
+    exc = e.get("exception")
+    state_view = {k: v for k, v in state.items() if not k.startswith("__")}
+    return StepRow(
+        seq=seq,
+        action=b.get("action", "?"),
+        started=started,
+        duration_ms=_duration_ms(started, e.get("end_time", "")),
+        status="error" if exc else "ok",
+        error_summary=_exception_summary(str(exc))[:140] if exc else None,
+        state_summary=state_view,
+        state_raw=state,
+    )
+
+
+def _read_steps(log_path: Path) -> list[StepRow]:
+    """Pair begin/end entries from a Burr tracker JSONL into rows.
+
+    Works around Burr's sync-action staleness: when an ``@action`` body is
+    sync, ``post_run_step`` (the source of ``end_entry``) fires with
+    pre-step state. We detect this per-row by checking ``__PRIOR_STEP`` in
+    the recorded state. If it does not match the row's action, we scan
+    forward for the entry whose ``__PRIOR_STEP`` does match. That entry's
+    state is the true post-step state for this row.
+    """
+    begins, ends = _scan_tracker_log(log_path)
 
     def _post_state(seq: int, action_name: str) -> dict[str, Any]:
         e = ends.get(seq)
@@ -124,13 +154,12 @@ def _read_steps(log_path: Path) -> list[StepRow]:
     for seq in sorted(begins):
         b = begins[seq]
         e = ends.get(seq)
-        started = b.get("start_time", "")
         if e is None:
             rows.append(
                 StepRow(
                     seq=seq,
                     action=b.get("action", "?"),
-                    started=started,
+                    started=b.get("start_time", ""),
                     duration_ms=None,
                     status="running",
                     error_summary=None,
@@ -138,38 +167,7 @@ def _read_steps(log_path: Path) -> list[StepRow]:
                 )
             )
             continue
-        duration_ms = _duration_ms(started, e.get("end_time", ""))
-        exc = e.get("exception")
-        action_name = b.get("action", "?")
-        state = _post_state(seq, action_name)
-        state_view = {k: v for k, v in state.items() if not k.startswith("__")}
-        if exc:
-            err_first_line = _exception_summary(str(exc))
-            rows.append(
-                StepRow(
-                    seq=seq,
-                    action=b.get("action", "?"),
-                    started=started,
-                    duration_ms=duration_ms,
-                    status="error",
-                    error_summary=err_first_line[:140],
-                    state_summary=state_view,
-                    state_raw=state,
-                )
-            )
-        else:
-            rows.append(
-                StepRow(
-                    seq=seq,
-                    action=b.get("action", "?"),
-                    started=started,
-                    duration_ms=duration_ms,
-                    status="ok",
-                    error_summary=None,
-                    state_summary=state_view,
-                    state_raw=state,
-                )
-            )
+        rows.append(_completed_row(seq, b, e, _post_state(seq, b.get("action", "?"))))
     return rows
 
 

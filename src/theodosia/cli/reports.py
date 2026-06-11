@@ -88,6 +88,72 @@ def report(
         _post_report(webhook, markdown, project=proj, app_id=aid)
 
 
+def _timeline_section(steps: list[StepRow]) -> list[str]:
+    """Markdown table of every recorded step."""
+    if not steps:
+        return []
+    lines = [
+        "## Timeline",
+        "",
+        "| seq | action | status | started | dur (ms) | error |",
+        "|---:|---|---|---|---:|---|",
+    ]
+    for s in steps:
+        dur = f"{s.duration_ms:.1f}" if s.duration_ms is not None else "-"
+        err = (s.error_summary or "").replace("|", "\\|")[:80]
+        lines.append(f"| {s.seq} | `{s.action}` | {s.status} | {s.started} | {dur} | {err} |")
+    lines.append("")
+    return lines
+
+
+def _refusals_section(refusals: list[StepRow]) -> list[str]:
+    """Markdown table of refused transitions."""
+    if not refusals:
+        return []
+    lines = [
+        "## Refusals",
+        "",
+        "Refusals are transitions the agent attempted that the FSM rejected. "
+        "They never advanced state; they are recorded here for postmortem.",
+        "",
+        "| seq | action | ts | reason |",
+        "|---:|---|---|---|",
+    ]
+    for r in refusals:
+        reason = (r.error_summary or "").replace("|", "\\|")[:80]
+        lines.append(f"| {r.seq} | `{r.action}` | {r.started} | {reason} |")
+    lines.append("")
+    return lines
+
+
+def _final_state_section(steps: list[StepRow]) -> list[str]:
+    """Markdown block for the final state snapshot, with the staleness note."""
+    if not steps or not steps[-1].state_summary:
+        return []
+    lines = ["## Final state", ""]
+    if _terminal_state_may_be_stale(steps):
+        lines.extend(
+            (
+                "> Note: the terminal action's post-state cannot be read back "
+                "from Burr's tracker when the action body is sync (Burr fires "
+                "`post_run_step` with pre-action state in that case). The "
+                "snapshot below is one step behind for a sync terminal; for "
+                "the true post-action state read `theodosia://state` from a "
+                "live session or write the action body `async def`.",
+                "",
+            )
+        )
+    lines.extend(
+        (
+            "```json",
+            json.dumps(steps[-1].state_summary, indent=2, default=str),
+            "```",
+            "",
+        )
+    )
+    return lines
+
+
 def _render_session_report(
     *,
     project: str,
@@ -117,65 +183,9 @@ def _render_session_report(
         )
     lines.append("")
 
-    if steps:
-        lines.extend(
-            (
-                "## Timeline",
-                "",
-                "| seq | action | status | started | dur (ms) | error |",
-                "|---:|---|---|---|---:|---|",
-            )
-        )
-        for s in steps:
-            dur = f"{s.duration_ms:.1f}" if s.duration_ms is not None else "-"
-            err = (s.error_summary or "").replace("|", "\\|")[:80]
-            lines.append(f"| {s.seq} | `{s.action}` | {s.status} | {s.started} | {dur} | {err} |")
-        lines.append("")
-
-    if refusals:
-        lines.extend(
-            (
-                "## Refusals",
-                "",
-                "Refusals are transitions the agent attempted that the FSM rejected. "
-                "They never advanced state; they are recorded here for postmortem.",
-                "",
-                "| seq | action | ts | reason |",
-                "|---:|---|---|---|",
-            )
-        )
-        for r in refusals:
-            reason = (r.error_summary or "").replace("|", "\\|")[:80]
-            lines.append(f"| {r.seq} | `{r.action}` | {r.started} | {reason} |")
-        lines.append("")
-
-    if steps:
-        final_state = steps[-1].state_summary
-        if final_state:
-            lines.extend(("## Final state", ""))
-            if _terminal_state_may_be_stale(steps):
-                lines.extend(
-                    (
-                        "> Note: the terminal action's post-state cannot be read back "
-                        "from Burr's tracker when the action body is sync (Burr fires "
-                        "`post_run_step` with pre-action state in that case). The "
-                        "snapshot below is one step behind for a sync terminal; for "
-                        "the true post-action state read `theodosia://state` from a "
-                        "live session or write the action body `async def`.",
-                        "",
-                    )
-                )
-            lines.extend(
-                (
-                    "```json",
-                    json.dumps(final_state, indent=2, default=str),
-                    "```",
-                    "",
-                )
-            )
-
-    if not steps and not refusals:
-        lines.extend(("_(no steps or refusals recorded at this session yet)_", ""))
+    lines.extend(_timeline_section(steps))
+    lines.extend(_refusals_section(refusals))
+    lines.extend(_final_state_section(steps))
 
     return "\n".join(lines)
 
