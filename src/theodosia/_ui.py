@@ -17,6 +17,7 @@ from __future__ import annotations
 import html as _html
 import os
 import shutil
+import tempfile
 from importlib.resources import files
 from pathlib import Path
 
@@ -366,7 +367,7 @@ def serve_themed(
     # + field "path", i.e. the literal "burr_path". BURR_PATH would be ignored.
     os.environ["burr_path"] = str(Path(storage_dir).expanduser())  # noqa: SIM112
 
-    build_dir = Path(os.environ.get("TMPDIR", "/tmp")) / f"theodosia-ui-{name}" / "build"
+    build_dir = Path(tempfile.gettempdir()) / f"theodosia-ui-{name}" / "build"
     build_themed_assets(build_dir, name=name, mark=mark, subtitle=subtitle, credit_html=credit_html)
 
     app = build_app(build_dir)
