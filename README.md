@@ -151,13 +151,10 @@ Full docs at **[msradam.github.io/theodosia](https://msradam.github.io/theodosia
 
 [`examples/`](examples/) ships self-contained FSMs covering pure-FSM, typed state, hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM, upstream, and multi-graph. Each runs with `uv run python examples/<file>.py`. The test suite runs with `uv run pytest`.
 
-## Drop-in demos
+## Related projects
 
-[theodosia-rehearsal](https://github.com/msradam/theodosia-rehearsal) collects drop-in demos that exercise the framework end to end.
-
-## Compose with Philip
-
-[Philip](https://github.com/msradam/philip) lifts declarative artifacts (Ansible YAML, Mermaid `stateDiagram-v2`, Excalidraw) into Burr `Application` instances that `theodosia.mount()` serves directly.
+- [theodosia-rehearsal](https://github.com/msradam/theodosia-rehearsal): drop-in demos that exercise the framework end to end.
+- [Philip](https://github.com/msradam/philip): lifts declarative artifacts (Ansible YAML, Mermaid `stateDiagram-v2`, Excalidraw) into Burr `Application` instances that `theodosia.mount()` serves directly.
 
 ## Acknowledgements
 
