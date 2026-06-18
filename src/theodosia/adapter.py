@@ -228,6 +228,7 @@ listed)."""
 # Re-exported so anything reaching for these off this module keeps working.
 from theodosia._graph_summary import (  # noqa: E402
     _compute_graph_summary,
+    _graph_actions_by_tag,
     _next_external_tools,
     _normalize_external_tools,
     _render_action_surface,
@@ -284,6 +285,7 @@ from theodosia._introspect import (  # noqa: E402,F401 (re-export)
     _annotation_to_schema,
     _coerce_pydantic_inputs,
     _input_schemas,
+    _next_action_schemas,
     _pydantic_model_in_annotation,
     valid_next_action_names,
 )
@@ -582,6 +584,7 @@ def _refusal_payload(
                 "error": "invalid_transition",
                 "requested": exc.requested,
                 "valid_next_actions": exc.valid,
+                "next_action_schemas": _next_action_schemas(app, exc.valid),
                 "message": str(exc),
             },
             {
@@ -591,6 +594,7 @@ def _refusal_payload(
             },
         )
     valid = valid_next_action_names(app)
+    schemas = _next_action_schemas(app, valid)
     if isinstance(exc, ValidationFailed):
         return (
             {
@@ -599,6 +603,7 @@ def _refusal_payload(
                 "reason": exc.reason,
                 "details": exc.details,
                 "valid_next_actions": valid,
+                "next_action_schemas": schemas,
             },
             {
                 "refused": True,
@@ -616,6 +621,7 @@ def _refusal_payload(
                 "timeout_seconds": exc.timeout_seconds,
                 "message": str(exc),
                 "valid_next_actions": valid,
+                "next_action_schemas": schemas,
             },
             {
                 "refused": True,
@@ -633,6 +639,7 @@ def _refusal_payload(
                 "error_type": type(exc.original).__name__,
                 "error_message": str(exc.original),
                 "valid_next_actions": valid,
+                "next_action_schemas": schemas,
             },
             {
                 "refused": True,
@@ -1056,6 +1063,7 @@ def _register_resources(
     shared_lock: asyncio.Lock,
     factory: ApplicationFactory | None,
     graph_summary_json: str,
+    graph_summary: dict[str, Any],
 ) -> None:
     """Register the ``theodosia://`` read-only resource surface on ``mcp``."""
 
@@ -1085,6 +1093,18 @@ def _register_resources(
             }
         """
         return graph_summary_json
+
+    @mcp.resource("theodosia://graph/tag/{tag}")
+    async def _graph_by_tag_resource(tag: str) -> str:
+        """Actions carrying ``tag``, as a lens over ``theodosia://graph``.
+
+        Returns ``{name, entrypoint, tag, actions, matched}`` where
+        ``actions`` is the subset of the topology whose ``tags`` include
+        ``tag``, each with its full metadata block. Transitions are
+        omitted: this is a filter over the action set, not a sub-graph.
+        An unknown tag returns an empty ``actions`` list, not an error.
+        """
+        return json.dumps(_graph_actions_by_tag(graph_summary, tag), indent=2)
 
     @mcp.resource("theodosia://state")
     async def _state_resource(ctx: Context) -> str:
@@ -1363,6 +1383,7 @@ async def _handle_unknown_action(
         "requested": action,
         "known_actions": action_names,
         "valid_next_actions": valid,
+        "next_action_schemas": _next_action_schemas(app, valid),
         "message": (
             f"unknown action {action!r}. Reachable actions from the current state: {valid}."
         ),
@@ -1487,6 +1508,7 @@ async def _finish_step_success(
         subruns=new_subruns or None,
         app=app,
     )
+    out["next_action_schemas"] = _next_action_schemas(app, out["valid_next_actions"])
     headline = _success_headline(seq, action, out["valid_next_actions"])
     await _emit_log(ctx, headline)
     return _step_tool_result(out, headline)
@@ -2520,6 +2542,7 @@ def mount(
         shared_lock=shared_lock,
         factory=factory,
         graph_summary_json=graph_summary_json,
+        graph_summary=graph_summary,
     )
     _register_personas(
         mcp, personas_map=personas_map, persona=persona, store=store, factory=factory

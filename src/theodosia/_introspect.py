@@ -103,6 +103,16 @@ def valid_next_action_names(app: Application[Any]) -> list[str]:
     return valid
 
 
+def _next_action_schemas(app: Application[Any], names: list[str]) -> dict[str, dict[str, Any]]:
+    """Input schemas for each reachable action, keyed by name.
+
+    Returns only the subset named in ``names``; silently skips any name
+    not found in the graph (shouldn't happen in practice).
+    """
+    action_map = {a.name: a for a in app.graph.actions}
+    return {n: _input_schemas(action_map[n]) for n in names if n in action_map}
+
+
 def _action_inputs(action: Action) -> tuple[list[str], list[str]]:
     """Return ``(required, optional)`` input names for an action."""
     raw = action.inputs

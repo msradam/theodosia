@@ -66,6 +66,9 @@ def _action_meta(action: Any, ext_map: dict[str, list[str]]) -> dict[str, Any]:
     }
     if ext_map.get(action.name):
         meta["external_tools"] = ext_map[action.name]
+    tags = list(getattr(action, "tags", None) or [])
+    if tags:
+        meta["tags"] = tags
     return meta
 
 
@@ -148,6 +151,26 @@ def _next_external_tools(
     don't use the feature.
     """
     return {a: external_tools_map[a] for a in valid_next_actions if external_tools_map.get(a)}
+
+
+def _graph_actions_by_tag(graph_summary: dict[str, Any], tag: str) -> dict[str, Any]:
+    """Tag lens over a computed graph summary: actions carrying ``tag``.
+
+    Returns the same ``name``/``entrypoint`` context plus the queried
+    ``tag``, the matching actions (each with its full metadata block),
+    and a ``matched`` count. Transitions are omitted: this is a filter
+    over the action set, not a sub-graph, so a partial transition table
+    would mislead. An unknown tag yields an empty ``actions`` list, not
+    an error.
+    """
+    matched = [a for a in graph_summary["actions"] if tag in a.get("tags", [])]
+    return {
+        "name": graph_summary["name"],
+        "entrypoint": graph_summary["entrypoint"],
+        "tag": tag,
+        "actions": matched,
+        "matched": len(matched),
+    }
 
 
 def _compute_graph_summary(

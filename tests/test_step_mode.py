@@ -117,3 +117,64 @@ async def test_next_resource_lists_valid_actions():
         await client.call_tool("step", {"action": "take_order", "inputs": {"item": "latte"}})
         result = await client.read_resource("theodosia://next")
         assert set(json.loads(result[0].text)) == {"pay", "add_modifier", "cancel"}
+
+
+@pytest.mark.asyncio
+async def test_success_response_includes_next_action_schemas():
+    server = build_server(ServingMode.STEP)
+    async with Client(server) as client:
+        r = await client.call_tool(
+            "step", {"action": "take_order", "inputs": {"item": "latte", "qty": 2}}
+        )
+        out = r.structured_content
+        schemas = out["next_action_schemas"]
+        # Keys match valid_next_actions exactly.
+        assert set(schemas.keys()) == set(out["valid_next_actions"])
+        # pay requires amount (float).
+        assert schemas["pay"]["amount"]["type"] == "number"
+        # add_modifier has a Literal enum for modifier.
+        assert set(schemas["add_modifier"]["modifier"]["enum"]) == {
+            "extra_shot",
+            "oat_milk",
+            "syrup",
+        }
+        # cancel takes no inputs.
+        assert schemas["cancel"] == {}
+
+
+@pytest.mark.asyncio
+async def test_invalid_transition_refusal_includes_next_action_schemas():
+    server = build_server(ServingMode.STEP)
+    async with Client(server) as client:
+        r = await client.call_tool("step", {"action": "pay", "inputs": {"amount": 9.0}})
+        out = r.structured_content
+        assert out["error"] == "invalid_transition"
+        schemas = out["next_action_schemas"]
+        assert set(schemas.keys()) == set(out["valid_next_actions"])
+        # At entry state only take_order is reachable.
+        assert "take_order" in schemas
+        assert schemas["take_order"]["item"]["type"] == "string"
+
+
+@pytest.mark.asyncio
+async def test_unknown_action_refusal_includes_next_action_schemas():
+    server = build_server(ServingMode.STEP)
+    async with Client(server) as client:
+        r = await client.call_tool("step", {"action": "nonexistent", "inputs": {}})
+        out = r.structured_content
+        assert out["error"] == "unknown_action"
+        schemas = out["next_action_schemas"]
+        assert set(schemas.keys()) == set(out["valid_next_actions"])
+        assert "take_order" in schemas
+
+
+@pytest.mark.asyncio
+async def test_step_output_schema_declares_next_action_schemas():
+    # The wire field must be documented in the tool's output schema, not
+    # just present at runtime, so schema-validating clients see it.
+    server = build_server(ServingMode.STEP)
+    async with Client(server) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+        props = tools["step"].outputSchema["properties"]
+        assert "next_action_schemas" in props
+        assert props["next_action_schemas"]["type"] == "object"

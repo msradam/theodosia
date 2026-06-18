@@ -186,6 +186,17 @@ def _step_response_schema() -> dict[str, Any]:
                     "now. Present on success and on every refusal."
                 ),
             },
+            "next_action_schemas": {
+                "type": "object",
+                "additionalProperties": {"type": "object", "additionalProperties": True},
+                "description": (
+                    "Input schema for each action in valid_next_actions, keyed by "
+                    "action name. Each value maps a parameter name to its type "
+                    "(and default, when present), so the agent learns how to call "
+                    "an action exactly when it becomes reachable. Present on success "
+                    "and on every refusal that carries valid_next_actions."
+                ),
+            },
             "reason": {
                 "type": "string",
                 "description": "Validation failure reason (validation_failed only).",

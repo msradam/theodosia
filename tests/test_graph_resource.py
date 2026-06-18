@@ -71,6 +71,60 @@ async def test_graph_resource_describes_actions():
         assert s["optional_inputs"] == ["optional_note"]
 
 
+@action(reads=["stage"], writes=["stage"], tags=["dangerous", "irreversible"])
+def detonate(state: State) -> State:
+    """A tagged action."""
+    return state.update(stage="boom")
+
+
+def _tagged_app():
+    return (
+        ApplicationBuilder()
+        .with_actions(start=start, detonate=detonate)
+        .with_transitions(("start", "detonate"))
+        .with_state(stage="new")
+        .with_entrypoint("start")
+        .build()
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_resource_surfaces_action_tags():
+    server = mount(_tagged_app, mode=ServingMode.STEP, name="tag-test")
+    async with Client(server) as client:
+        graph = json.loads((await client.read_resource("theodosia://graph"))[0].text)
+        by_name = {a["name"]: a for a in graph["actions"]}
+        # Tagged action surfaces its tags.
+        assert by_name["detonate"]["tags"] == ["dangerous", "irreversible"]
+        # Untagged action omits the key entirely (no empty-list clutter).
+        assert "tags" not in by_name["start"]
+
+
+@pytest.mark.asyncio
+async def test_graph_by_tag_resource_filters_actions():
+    server = mount(_tagged_app, mode=ServingMode.STEP, name="tag-filter-test")
+    async with Client(server) as client:
+        view = json.loads((await client.read_resource("theodosia://graph/tag/dangerous"))[0].text)
+        assert view["tag"] == "dangerous"
+        assert view["matched"] == 1
+        assert [a["name"] for a in view["actions"]] == ["detonate"]
+        # Filtered actions keep their full metadata block.
+        assert view["actions"][0]["tags"] == ["dangerous", "irreversible"]
+        # Context fields carry over from the full graph.
+        assert view["name"] == "tag-filter-test"
+        assert view["entrypoint"] == "start"
+
+
+@pytest.mark.asyncio
+async def test_graph_by_tag_resource_unknown_tag_is_empty_not_error():
+    server = mount(_tagged_app, mode=ServingMode.STEP, name="tag-empty-test")
+    async with Client(server) as client:
+        view = json.loads((await client.read_resource("theodosia://graph/tag/nonexistent"))[0].text)
+        assert view["tag"] == "nonexistent"
+        assert view["matched"] == 0
+        assert view["actions"] == []
+
+
 @pytest.mark.asyncio
 async def test_graph_resource_describes_transitions_with_conditions():
     server = mount(_branchy_app, mode=ServingMode.STEP, name="t-test")

@@ -8,6 +8,24 @@ versioning.
 
 _Nothing yet._
 
+## [0.5.0] - 2026-06-18
+
+Progressive action disclosure on the step hot path and a tag lens over the
+graph. No API breakage; the same four-tool surface and tracker format.
+
+### Added
+
+- `next_action_schemas` on every step response (on success and on every
+  refusal that carries `valid_next_actions`): the input schema for each
+  reachable action, keyed by name, so an agent learns an action's call
+  shape when it becomes reachable instead of guessing or reading
+  `theodosia://graph` separately. Declared in the `step` tool's output
+  schema.
+- Burr action `tags` on `theodosia://graph`, per action and omitted when
+  empty, plus a `theodosia://graph/tag/{tag}` resource that returns the
+  actions carrying a given tag. Lets a deployment drive client policy (for
+  example `dangerous`, `irreversible`) off the MCP layer.
+
 ## [0.4.2] - 2026-06-04
 
 A branded session console and two small observability additions. No API

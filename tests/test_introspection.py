@@ -10,6 +10,7 @@ from __future__ import annotations
 from theodosia.adapter import (
     _action_inputs,
     _action_signature_params,
+    _next_action_schemas,
     _public_state,
     valid_next_action_names,
 )
@@ -53,6 +54,23 @@ def test_action_signature_params_carries_types_and_defaults(fresh_app):
     assert by_name["item"].annotation is str
     assert by_name["qty"].annotation is int
     assert by_name["qty"].default == 1
+
+
+def test_next_action_schemas_at_entry(fresh_app):
+    schemas = _next_action_schemas(fresh_app, ["take_order"])
+    assert "take_order" in schemas
+    assert schemas["take_order"]["item"] == {"type": "string"}
+    assert schemas["take_order"]["qty"]["type"] == "integer"
+    assert schemas["take_order"]["qty"]["default"] == 1
+
+
+def test_next_action_schemas_skips_unknown(fresh_app):
+    schemas = _next_action_schemas(fresh_app, ["take_order", "nonexistent"])
+    assert list(schemas.keys()) == ["take_order"]
+
+
+def test_next_action_schemas_empty_names(fresh_app):
+    assert _next_action_schemas(fresh_app, []) == {}
 
 
 def test_public_state_filters_internal_keys():
