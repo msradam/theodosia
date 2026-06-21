@@ -52,6 +52,7 @@ export default defineConfig({
 				{
 					label: 'Evidence',
 					items: [
+						{ label: 'ITBench study', slug: 'itbench' },
 						{ label: 'Case study', slug: 'case-study' },
 						{ label: 'Research foundation', slug: 'research-foundation' },
 					],

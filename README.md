@@ -106,6 +106,12 @@ Full reference (Persona, Assembly, hooks, middleware, tracker, `drive_claude`) l
 
 Theodosia does not include an agent, a model, or a workflow engine. It mounts an existing Burr `Application` and gates an MCP client's access to it. The rails are only as tight as the graph you author.
 
+## Benchmarks (preliminary)
+
+Theodosia's headline property is structural and holds regardless of any accuracy number: every step an agent takes, and every step it was refused, lands in a typed, replayable, hash-chained ledger. The benchmark below is supporting evidence.
+
+On IBM Research's [ITBench SRE benchmark](https://github.com/itbench-hub/ITBench), scored by the benchmark's own judge, taking one agent (`claude-haiku-4-5`) and gating its procedure with Theodosia significantly improved root-cause entity F1 over the same raw agent (0.561 vs 0.408, paired p<0.01), driven by the gate suppressing noise in the agent's conclusions. Same model, same prompt, same tools, same data; the only change is the gate. Preliminary: one model, one judge, 35 scenarios. Full methodology, the FSM, and the seven validity controls: [theodosia-bench](https://github.com/msradam/theodosia-bench/blob/main/RESULTS.md).
+
 ## Command line
 
 ```bash
@@ -144,6 +150,7 @@ Full docs at **[msradam.github.io/theodosia](https://msradam.github.io/theodosia
 | [Compatibility](https://msradam.github.io/theodosia/compatibility/) | What works through `mount()` (typed state, persistence, hooks, parallelism, telemetry) |
 | [CLI](https://msradam.github.io/theodosia/cli/) | `serve` / `doctor` / `render` / `sessions` / `watch` / `logs` / `status` / `report` / `primer`, and `build_cli` |
 | [Deployment recipes](https://msradam.github.io/theodosia/deployment/) | Copy-pasteable configs: Claude Code, Cursor, mcphost, fast-agent, HTTP, SSE, Lambda, Kubernetes |
+| [ITBench study](https://msradam.github.io/theodosia/itbench/) | Controlled raw-vs-gated study on IBM Research's ITBench SRE, scored by the benchmark's own judge |
 | [Case study](https://msradam.github.io/theodosia/case-study/) | Kimi K2.6 on Grafana o11y-bench: free-ranging vs gated |
 | [Research foundation](https://msradam.github.io/theodosia/research-foundation/) | The published evidence the design rests on |
 
