@@ -126,3 +126,40 @@ def as_python_dict(tokens: Tokens) -> dict[str, str]:
     access without going through CSS.
     """
     return {f.name: getattr(tokens, f.name) for f in fields(tokens)}
+
+
+def _accent_hue(slug: str) -> int:
+    """Stable hue (0-359) from a slug via SHA-256 truncation.
+
+    Uses SHA-256 rather than Python's built-in ``hash()`` so the value is
+    identical across runtimes and Python versions.
+    """
+    import hashlib
+
+    digest = int(hashlib.sha256(slug.encode()).hexdigest()[:8], 16)
+    return digest % 360
+
+
+def brand_tokens(slug: str) -> Tokens:
+    """Derive a ``Tokens`` set for a CLI slug.
+
+    ``"theodosia"`` returns :data:`LIGHT` unchanged to preserve the canonical
+    brand. Every other slug hashes to a stable hue and gets a bespoke accent
+    triple — same slug always yields the same colors, no config required.
+
+    The three accent roles map onto ``pine`` (primary links/headings),
+    ``pine_soft`` (hover state), and ``pine_tint`` (surface wash). All other
+    tokens are inherited from ``LIGHT`` so surfaces, fonts, and status colors
+    stay consistent across brands.
+    """
+    from dataclasses import replace
+
+    if slug == "theodosia":
+        return LIGHT
+    hue = _accent_hue(slug)
+    return replace(
+        LIGHT,
+        pine=f"hsl({hue}, 52%, 31%)",
+        pine_soft=f"hsl({hue}, 47%, 44%)",
+        pine_tint=f"hsl({hue}, 55%, 94%)",
+    )

@@ -36,13 +36,14 @@ async def _emit_log(ctx: Context | None, msg: str) -> None:
         await ctx.info(msg)
 
 
-def _step_tool_result(body: dict[str, Any], headline: str) -> ToolResult:
+def _step_tool_result(body: dict[str, Any], headline: str, *, is_error: bool = False) -> ToolResult:
     return ToolResult(
         content=[
             TextContent(type="text", text=headline),
             TextContent(type="text", text=json.dumps(body, default=str)),
         ],
         structured_content=body,
+        is_error=is_error,
     )
 
 

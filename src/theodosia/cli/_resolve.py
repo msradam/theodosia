@@ -14,8 +14,14 @@ from theodosia.cli._branding import (
     _BRANDING,
     _BURR_UI_DEFAULT_HOST,
     _BURR_UI_DEFAULT_PORT,
+    _prog_slug,
     err_console,
 )
+
+
+def _burr_has_sessions() -> bool:
+    burr_home = Path("~/.burr").expanduser()
+    return burr_home.exists() and any(burr_home.iterdir())
 
 
 def _looks_like_path(s: str) -> bool:
@@ -88,35 +94,34 @@ def _resolve_home(home: Path | None) -> Path:
     """Tracker storage root, in resolution-priority order.
 
     1. Explicit ``--home`` flag (per invocation).
-    2. ``THEODOSIA_HOME`` env var (per process / per deployment).
-    3. ``build_cli(home=...)`` default (per rebranded CLI).
-    4. ``~/.theodosia`` (the default).
+    2. Brand-specific env var (e.g. ``HELIOS_HOME`` for ``prog_name="helios"``).
+    3. ``THEODOSIA_HOME`` env var (global fallback across all brands).
+    4. ``build_cli(home=...)`` default (per rebranded CLI).
+    5. ``~/.{prog_name}`` — auto-derived from the CLI's brand name.
 
-    Theodosia keeps its LLM-driven session traces in ``~/.theodosia`` by
-    default, so they stay separate from code-driven Burr runs in
-    ``~/.burr``. If ``~/.theodosia`` has no sessions yet but ``~/.burr``
-    does, fall back to ``~/.burr`` and print a hint, so a user whose
-    tracker still writes to Burr's default does not see an empty store.
-    The fallback is suppressed when ``THEODOSIA_HOME`` is set, because
-    an operator who set it explicitly does not need the implicit hint
-    on every command.
+    Each rebranded CLI (``helios``, ``oceanus``, …) therefore gets its own
+    isolated storage root without any explicit ``home=`` in ``build_cli``.
+    The ``~/.burr`` migration hint is shown only for the ``theodosia`` CLI
+    itself, not for downstream rebrands.
     """
     if home is not None:
         return Path(home).expanduser()
-    env_home = os.environ.get("THEODOSIA_HOME")
+    prog = _BRANDING.prog_name
+    slug = _prog_slug(prog)
+    env_key = f"{slug.upper().replace('-', '_')}_HOME"
+    env_home = os.environ.get(env_key) or os.environ.get("THEODOSIA_HOME")
     if env_home:
         return Path(env_home).expanduser()
     if _BRANDING.home is not None:
         return Path(_BRANDING.home).expanduser()
-    theodosia_home = Path("~/.theodosia").expanduser()
-    burr_home = Path("~/.burr").expanduser()
-    if not theodosia_home.exists() and burr_home.exists() and any(burr_home.iterdir()):
+    default_home = Path(f"~/.{slug}").expanduser()
+    if slug == "theodosia" and not default_home.exists() and _burr_has_sessions():
         err_console.print(
             "[muted]no sessions in ~/.theodosia; reading ~/.burr "
             "(pass [bold]--home[/] or set [bold]THEODOSIA_HOME[/] to choose explicitly)[/]"
         )
-        return burr_home
-    return theodosia_home
+        return Path("~/.burr").expanduser()
+    return default_home
 
 
 def _burr_ui_url(

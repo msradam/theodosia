@@ -80,6 +80,16 @@ def _set_branding(branding: _Branding) -> None:
         setattr(_BRANDING, f.name, getattr(branding, f.name))
 
 
+def _prog_slug(prog: str) -> str:
+    """Filesystem/env-safe slug from a program name.
+
+    Lowercases and converts spaces to hyphens so names like ``"Cait Sith"``
+    produce ``~/.cait-sith`` and ``CAIT_SITH_HOME`` rather than a path with
+    a literal space and an invalid env-var name.
+    """
+    return prog.lower().replace(" ", "-")
+
+
 def brand_display_name() -> str:
     """The brand's display name: ``ui_title`` if set, else the program name.
 

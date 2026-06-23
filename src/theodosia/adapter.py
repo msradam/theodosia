@@ -130,14 +130,8 @@ from theodosia._introspect import (  # noqa: E402,F401 (re-export)
     _public_state,
     _serializable_state,
 )
-from theodosia._step_schema import (  # noqa: E402,F401
+from theodosia._step_schema import (  # noqa: E402
     _step_response_schema,
-    _StepActionError,
-    _StepActionTimeout,
-    _StepInvalidTransition,
-    _StepSuccess,
-    _StepUnknownAction,
-    _StepValidationFailed,
 )
 
 # State keys Burr writes itself. Hide them from the public state view so
@@ -1461,7 +1455,11 @@ async def _handle_step_refusal(
         detail=response.get("error_type", "") or "",
     )
     await _emit_log(ctx, headline)
-    return _step_tool_result(response, headline)
+    # action_error / action_timeout are genuine execution failures; the FSM
+    # guidance refusals (invalid_transition, validation_failed, unknown_action)
+    # carry valid_next_actions for self-correction and should not be errors.
+    is_error = isinstance(exc, (ActionExecutionError, ActionTimeoutError))
+    return _step_tool_result(response, headline, is_error=is_error)
 
 
 async def _finish_step_success(
@@ -2476,15 +2474,12 @@ def mount(
     # to write the hint themselves.
     action_surface = _render_action_surface(shared_app)
     discovery_hint = (
-        "Read theodosia://graph once at start for full per-action metadata "
-        "(reads, writes, required/optional inputs); the listing above is "
-        "the minimum surface. You don't need to keep polling theodosia://next "
-        "or theodosia://state, each step response already includes the new "
-        "state and valid_next_actions inline. To restart the FSM after "
-        "reaching a terminal node or a dead-end branch, call the "
-        "reset_session tool. To rewind to a specific earlier point and "
-        "explore an alternate path from there, call fork_at(sequence_id) "
-        "with a seq from theodosia://history. Both are always available."
+        "Each step response includes the new state and valid_next_actions "
+        "inline — no need to poll theodosia://next or theodosia://state. "
+        "To restart the FSM after reaching a terminal node or a dead-end "
+        "branch, call reset_session. To rewind to a specific earlier point "
+        "and explore an alternate path, call fork_at(sequence_id) with a "
+        "seq from theodosia://history. Both are always available."
     )
     # Load personas (the identity layer). One persona becomes the default for
     # this server's instructions; all personas are registered as MCP prompts

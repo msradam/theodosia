@@ -20,7 +20,7 @@ from theodosia.cli._branding import (
     console,
     err_console,
 )
-from theodosia.cli._resolve import _resolve_app, _resolve_home
+from theodosia.cli._resolve import _burr_has_sessions, _resolve_app, _resolve_home
 from theodosia.cli._steps import _read_steps, _relative_when
 
 
@@ -101,12 +101,7 @@ def _print_status_header(payload: dict[str, Any]) -> None:
 
 def _print_status_empty_hint(resolved_home: Path) -> None:
     console.print(Text(f"\nno projects found in {resolved_home}.", style="muted"))
-    burr_home = Path("~/.burr").expanduser()
-    if (
-        resolved_home == Path("~/.theodosia").expanduser()
-        and burr_home.exists()
-        and any(burr_home.iterdir())
-    ):
+    if resolved_home == Path("~/.theodosia").expanduser() and _burr_has_sessions():
         console.print(
             "[muted]Sessions exist under [bold]~/.burr[/] (Burr's native default). "
             "Try [bold]theodosia status --home ~/.burr[/].[/]"

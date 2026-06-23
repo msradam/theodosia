@@ -39,7 +39,7 @@ async def test_sync_action_timeout_fires_within_budget():
     server = mount(_factory, name="t", action_timeout_seconds=0.5)
     start = asyncio.get_event_loop().time()
     async with Client(server) as c:
-        r = await c.call_tool("step", {"action": "slow", "inputs": {}})
+        r = await c.call_tool("step", {"action": "slow", "inputs": {}}, raise_on_error=False)
     elapsed = asyncio.get_event_loop().time() - start
     out = r.structured_content or {}
     assert out.get("error") == "action_timeout"

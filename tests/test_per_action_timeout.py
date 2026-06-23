@@ -49,7 +49,9 @@ async def test_tool_spec_timeout_wins_over_server_default():
         action_timeout_seconds=10.0,  # generous server default
     )
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "slow_one", "inputs": {}})
+        r = await client.call_tool(
+            "step", {"action": "slow_one", "inputs": {}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_timeout"
         # The per-tool override, not the server default, is what fired.
@@ -78,7 +80,7 @@ async def test_tool_spec_timeout_applies_when_server_default_is_none():
         # action_timeout_seconds defaults to None.
     )
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "slow", "inputs": {}})
+        r = await client.call_tool("step", {"action": "slow", "inputs": {}}, raise_on_error=False)
         out = r.structured_content
         assert out["error"] == "action_timeout"
         assert out["timeout_seconds"] == 0.1
@@ -107,7 +109,7 @@ async def test_no_per_tool_override_inherits_server_default():
         action_timeout_seconds=0.2,
     )
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "slow", "inputs": {}})
+        r = await client.call_tool("step", {"action": "slow", "inputs": {}}, raise_on_error=False)
         out = r.structured_content
         assert out["error"] == "action_timeout"
         assert out["timeout_seconds"] == 0.2
@@ -144,7 +146,9 @@ async def test_hand_tagged_action_function_works_too():
         # No server default; per-action override is the only timeout.
     )
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "hand_slow", "inputs": {}})
+        r = await client.call_tool(
+            "step", {"action": "hand_slow", "inputs": {}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_timeout"
         assert out["timeout_seconds"] == 0.1

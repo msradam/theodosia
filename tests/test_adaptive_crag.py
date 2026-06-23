@@ -48,7 +48,9 @@ def _patch_granite(monkeypatch, *responses: str):
 
 
 async def _step(client, action, **inputs):
-    return await client.call_tool("step", {"action": action, "inputs": inputs})
+    return await client.call_tool(
+        "step", {"action": action, "inputs": inputs}, raise_on_error=False
+    )
 
 
 def _payload(result):
@@ -127,6 +129,7 @@ async def test_ask_rejects_nonexistent_corpus_dir():
                     "corpus_dir": "/tmp/definitely-does-not-exist-xyz123",
                 },
             },
+            raise_on_error=False,
         )
         out = r.structured_content
         assert out["error"] == "action_error"

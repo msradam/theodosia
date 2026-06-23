@@ -428,15 +428,10 @@ def watch(
     ] = False,
 ) -> None:
     """Alias for `sessions tail`. Lives at the top level for muscle memory."""
-    home = _resolve_home(home)
     if list_projects:
         sessions_ls(home=home, project=None, limit=8, as_json=False)
         return
-    if not home.exists():
-        err_console.print(f"[err]No Burr tracker storage at[/] {home}")
-        raise typer.Exit(code=1)
-    log_path, proj, aid = _resolve_app(home, project, app_id)
-    _tail(log_path, project=proj, app_id=aid, poll_interval=poll_interval, once=once)
+    sessions_tail(app_id=app_id, project=project, home=home, poll_interval=poll_interval, once=once)
 
 
 def _print_log_row(r: Any, detail: str, *, plain: bool) -> None:

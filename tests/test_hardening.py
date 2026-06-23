@@ -52,7 +52,7 @@ def _erroring_app():
 async def test_action_error_returns_structured_response_and_records_history():
     server = mount(_erroring_app, mode=ServingMode.STEP, name="boom")
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "boom", "inputs": {}})
+        r = await client.call_tool("step", {"action": "boom", "inputs": {}}, raise_on_error=False)
         out = r.structured_content
         assert out["error"] == "action_error"
         assert out["error_type"] == "RuntimeError"
@@ -73,7 +73,7 @@ async def test_action_error_doesnt_advance_state():
     """A raised action shouldn't move the FSM forward."""
     server = mount(_erroring_app, mode=ServingMode.STEP, name="boom2")
     async with Client(server) as client:
-        await client.call_tool("step", {"action": "boom", "inputs": {}})
+        await client.call_tool("step", {"action": "boom", "inputs": {}}, raise_on_error=False)
         # FSM should still be at the entrypoint.
         next_actions = json.loads((await client.read_resource("theodosia://next"))[0].text)
         assert next_actions == ["boom"]

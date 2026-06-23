@@ -132,6 +132,7 @@ async def test_point_buy_total_validated():
                     "CHA": 8,
                 },
             },
+            raise_on_error=False,
         )
         out = r.structured_content
         assert out["error"] == "action_error"
@@ -166,6 +167,7 @@ async def test_skills_must_come_from_class_list():
         r = await client.call_tool(
             "step",
             {"action": "pick_skills", "inputs": {"skills": ["stealth", "arcana"]}},
+            raise_on_error=False,
         )
         out = r.structured_content
         assert out["error"] == "action_error"

@@ -80,7 +80,9 @@ async def test_stage_rejects_empty_item():
     server = build_server()
     handler = _make_handler("confirm")
     async with Client(server, elicitation_handler=handler) as client:
-        r = await client.call_tool("step", {"action": "stage", "inputs": {"item": "   "}})
+        r = await client.call_tool(
+            "step", {"action": "stage", "inputs": {"item": "   "}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_error"
         assert "item must not be empty" in out["error_message"]

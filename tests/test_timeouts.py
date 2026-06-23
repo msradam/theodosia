@@ -61,7 +61,9 @@ async def test_slow_action_is_cancelled_and_returns_timeout_error():
         action_timeout_seconds=0.2,
     )
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "slow_step", "inputs": {}})
+        r = await client.call_tool(
+            "step", {"action": "slow_step", "inputs": {}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_timeout"
         assert out["requested"] == "slow_step"
@@ -78,7 +80,7 @@ async def test_timeout_is_recorded_in_history():
         action_timeout_seconds=0.2,
     )
     async with Client(server) as client:
-        await client.call_tool("step", {"action": "slow_step", "inputs": {}})
+        await client.call_tool("step", {"action": "slow_step", "inputs": {}}, raise_on_error=False)
         history = json.loads((await client.read_resource("theodosia://history"))[0].text)
         assert len(history) == 1
         entry = history[0]
@@ -98,7 +100,7 @@ async def test_timeout_does_not_advance_state():
         action_timeout_seconds=0.2,
     )
     async with Client(server) as client:
-        await client.call_tool("step", {"action": "slow_step", "inputs": {}})
+        await client.call_tool("step", {"action": "slow_step", "inputs": {}}, raise_on_error=False)
         state = json.loads((await client.read_resource("theodosia://state"))[0].text)
         # done should still be False, FSM still at entry.
         assert state.get("done") is False

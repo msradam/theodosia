@@ -240,7 +240,9 @@ def test_max_severity_returns_worst_label():
 async def test_configure_rejects_negative_disk_pct():
     server = build_server()
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "configure", "inputs": {"disk_pct": -1}})
+        r = await client.call_tool(
+            "step", {"action": "configure", "inputs": {"disk_pct": -1}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_error"
         assert "disk_pct" in out["error_message"]
@@ -250,7 +252,9 @@ async def test_configure_rejects_negative_disk_pct():
 async def test_configure_rejects_memory_pct_over_100():
     server = build_server()
     async with Client(server) as client:
-        r = await client.call_tool("step", {"action": "configure", "inputs": {"memory_pct": 150}})
+        r = await client.call_tool(
+            "step", {"action": "configure", "inputs": {"memory_pct": 150}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_error"
 
@@ -439,7 +443,9 @@ async def test_check_disk_surfaces_command_failure(monkeypatch):
     server = build_server()
     async with Client(server) as client:
         await client.call_tool("step", {"action": "configure", "inputs": {}})
-        r = await client.call_tool("step", {"action": "check_disk", "inputs": {}})
+        r = await client.call_tool(
+            "step", {"action": "check_disk", "inputs": {}}, raise_on_error=False
+        )
         out = r.structured_content
         assert out["error"] == "action_error"
         assert "df" in out["error_message"]

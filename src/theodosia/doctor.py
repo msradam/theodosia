@@ -28,10 +28,7 @@ from typing import Any
 
 from burr.core import Application
 
-# Keys Burr writes itself. Doctor must ignore these when reasoning
-# about user-facing state coverage so it doesn't flag every Application
-# as having "unused" sequence-id housekeeping.
-_INTERNAL_STATE_KEYS = frozenset({"__SEQUENCE_ID", "__PRIOR_STEP"})
+from theodosia._introspect import _INTERNAL_STATE_KEYS
 
 
 class CheckStatus(str, Enum):  # noqa: UP042  # match adapter.ServingMode convention

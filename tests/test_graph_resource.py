@@ -159,13 +159,14 @@ async def test_graph_resource_is_constant_across_reads():
 
 @pytest.mark.asyncio
 async def test_instructions_include_discovery_hint():
-    """Server instructions point at theodosia://graph so the model sees it
-    before its first tool call."""
+    """Server instructions include the discovery hint so the model knows
+    about reset_session and fork_at before its first tool call."""
     server = mount(_branchy_app, mode=ServingMode.STEP, name="hint-test")
     # FastMCP exposes the server instructions via the initialize response;
     # we read them directly off the server object since the in-process
     # Client doesn't surface them through a separate API.
-    assert "theodosia://graph" in (server.instructions or "")
+    assert "reset_session" in (server.instructions or "")
+    assert "fork_at" in (server.instructions or "")
 
 
 @pytest.mark.asyncio
@@ -180,4 +181,4 @@ async def test_user_instructions_preserved_alongside_hint():
         instructions=user_text,
     )
     assert user_text in (server.instructions or "")
-    assert "theodosia://graph" in (server.instructions or "")
+    assert "reset_session" in (server.instructions or "")

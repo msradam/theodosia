@@ -39,7 +39,9 @@ VULN_DEMO = REPO_ROOT / "examples" / "data" / "codebase_security" / "vuln_demo"
 
 
 async def _step(client, action, **inputs):
-    return await client.call_tool("step", {"action": action, "inputs": inputs})
+    return await client.call_tool(
+        "step", {"action": action, "inputs": inputs}, raise_on_error=False
+    )
 
 
 def _payload(result):

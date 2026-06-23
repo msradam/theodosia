@@ -170,6 +170,7 @@ async def test_full_walk_through_mcp_step():
         r = await client.call_tool(
             "step",
             {"action": "execute", "inputs": {"command": "cat /etc/passwd"}},
+            raise_on_error=False,
         )
         refusal = r.structured_content
         assert refusal["error"] == "action_error"

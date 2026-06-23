@@ -190,10 +190,13 @@ def ui(
         return
 
     from theodosia._ui import brand_identity, serve_themed
+    from theodosia.cli._branding import _prog_slug
+    from theodosia.tokens import brand_tokens
 
     name, mark, credit = brand_identity(
         _BRANDING.prog_name, ui_title=_BRANDING.ui_title, ui_mark=_BRANDING.ui_mark
     )
+    tokens = brand_tokens(_prog_slug(_BRANDING.prog_name))
 
     console.print(
         f"Launching {name} session console on [link]http://{host}:{port}[/link]  "
@@ -209,6 +212,7 @@ def ui(
             subtitle="session tracking",
             credit_html=credit,
             open_browser=not no_open,
+            tokens=tokens,
         )
     except ImportError as exc:
         err_console.print(
@@ -266,18 +270,9 @@ def _launch_vanilla_ui(*, host: str, port: int, no_open: bool, storage_dir: Path
 def _version_callback(value: bool) -> None:
     if not value:
         return
-    from importlib.metadata import PackageNotFoundError, version
+    from theodosia.cli.status import _theodosia_installed_version
 
-    prog = _BRANDING.prog_name
-    pkg = prog if prog != "theodosia" else "theodosia"
-    try:
-        v = version(pkg)
-    except PackageNotFoundError:
-        try:
-            v = version("theodosia")
-        except PackageNotFoundError:
-            v = "unknown"
-    console.print(f"{prog} {v}")
+    console.print(f"{_BRANDING.prog_name} {_theodosia_installed_version()}")
     raise typer.Exit()
 
 
@@ -321,7 +316,10 @@ def build_cli(
         server_name: default MCP server name surfaced to clients.
         ui_extra: pip extra named in the ``ui`` install hint.
         home: default tracker storage root for the observability
-            commands. Overridden per-invocation by ``--home``.
+            commands. Overridden per-invocation by ``--home``. When
+            omitted, storage auto-derives to ``~/.{prog_name}`` (e.g.
+            ``~/.helios`` for ``prog_name="helios"``), so no explicit
+            ``home=`` is needed for a typical rebrand.
         upstream: map of server name to a ``fastmcp.Client`` transport.
             Action bodies reach these other MCP servers with
             ``call_upstream(server, tool, args)``. Passed through to

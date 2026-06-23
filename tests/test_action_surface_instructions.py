@@ -105,8 +105,8 @@ def test_instructions_without_user_string_still_emit_action_surface():
     server = mount(_factory, mode=ServingMode.STEP, name="surface-no-user")
     instr = _server_instructions(server)
     assert "Actions (entry: start):" in instr
-    # Discovery hint also present.
-    assert "theodosia://graph" in instr
+    # Discovery hint also present (reset_session, fork_at).
+    assert "reset_session" in instr
 
 
 def test_unconditional_transitions_omit_when_clause():

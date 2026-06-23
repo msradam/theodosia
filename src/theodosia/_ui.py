@@ -22,17 +22,16 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from theodosia.tokens import LIGHT as _TOKENS
+from theodosia.tokens import LIGHT as _LIGHT
+from theodosia.tokens import Tokens as _Tokens
 from theodosia.tokens import as_css_variables as _to_css
 
 _BURR_REPO = "https://github.com/apache/burr"
 
-# Co-brand bar + sidebar removal. Layout-only rules live here; every color and
-# font token is prepended from theodosia.tokens.LIGHT so this surface, the docs
-# site, and the TUI stay in lockstep.
-_THEME_CSS = (
-    (_to_css(_TOKENS) + "\n")
-    + """\
+# Layout-only rules. The :root token block is prepended at call time so each
+# rebranded CLI injects its own accent colors.  Split from _theme_css() so the
+# large string literal is defined once and shared across calls.
+_LAYOUT_CSS = """\
 :root {
   --thd-canvas-grid: radial-gradient(circle at 1px 1px, rgba(10,10,10,0.04) 1px, transparent 0);
 }
@@ -127,7 +126,12 @@ a[href*="/examples/"] { display: none !important; }
   padding-top: 16px;
 }
 """
-)
+
+
+def _theme_css(tokens: _Tokens) -> str:
+    """Full theme stylesheet for ``tokens``: CSS variable block + layout rules."""
+    return _to_css(tokens) + "\n" + _LAYOUT_CSS
+
 
 # Burr's sidebar carries hashed Tailwind class names that CSS can't reliably
 # pin, so detect it by shape after React renders (anchored left, tall, narrow,
@@ -269,6 +273,7 @@ def build_themed_assets(
     mark: str | None,
     subtitle: str,
     credit_html: str,
+    tokens: _Tokens = _LIGHT,
 ) -> Path:
     """Copy Burr's static UI to ``dest`` and patch it for ``name``.
 
@@ -282,7 +287,7 @@ def build_themed_assets(
 
     css_dir = dest / "static" / "css"
     css_dir.mkdir(parents=True, exist_ok=True)
-    (css_dir / "theodosia-theme.css").write_text(_THEME_CSS)
+    (css_dir / "theodosia-theme.css").write_text(_theme_css(tokens))
 
     index = dest / "index.html"
     page = index.read_text()
@@ -362,6 +367,7 @@ def serve_themed(
     subtitle: str,
     credit_html: str,
     open_browser: bool,
+    tokens: _Tokens = _LIGHT,
 ) -> None:
     """Build the themed assets and serve them, reading sessions from ``storage_dir``."""
     # Lowercase is required: Burr's backend settings read env_prefix "burr_"
@@ -369,7 +375,14 @@ def serve_themed(
     os.environ["burr_path"] = str(Path(storage_dir).expanduser())  # noqa: SIM112
 
     build_dir = Path(tempfile.gettempdir()) / f"theodosia-ui-{name}" / "build"
-    build_themed_assets(build_dir, name=name, mark=mark, subtitle=subtitle, credit_html=credit_html)
+    build_themed_assets(
+        build_dir,
+        name=name,
+        mark=mark,
+        subtitle=subtitle,
+        credit_html=credit_html,
+        tokens=tokens,
+    )
 
     app = build_app(build_dir)
 

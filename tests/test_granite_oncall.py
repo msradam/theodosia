@@ -42,7 +42,9 @@ def _patch_granite(monkeypatch, *responses: str):
 
 
 async def _step(client, action, **inputs):
-    return await client.call_tool("step", {"action": action, "inputs": inputs})
+    return await client.call_tool(
+        "step", {"action": action, "inputs": inputs}, raise_on_error=False
+    )
 
 
 def _payload(result):

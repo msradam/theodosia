@@ -21,23 +21,6 @@ class ReplayMismatch(RuntimeError):
     """A replayed call did not match the next recorded call."""
 
 
-class _Recorder:
-    """Shared accumulator for recorded (server, tool, args, result) entries."""
-
-    def __init__(self) -> None:
-        self.entries: list[dict[str, Any]] = []
-
-    def record(self, server: str, tool: str, args: dict[str, Any], result: Any) -> None:
-        self.entries.append(
-            {
-                "server": server,
-                "tool": tool,
-                "args": args.copy(),
-                "result": result,
-            }
-        )
-
-
 class RecordingUpstream:
     """Manager wrapper that records every upstream call; ``save`` writes JSONL."""
 
@@ -48,13 +31,13 @@ class RecordingUpstream:
                 f"got {type(wrapped).__name__}"
             )
         self._wrapped = wrapped
-        self._rec = _Recorder()
+        self._entries: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
 
     @property
     def entries(self) -> list[dict[str, Any]]:
         """All recorded entries in call order. Returns a copy."""
-        return [e.copy() for e in self._rec.entries]
+        return [e.copy() for e in self._entries]
 
     @property
     def server_names(self) -> list[str]:
@@ -63,7 +46,9 @@ class RecordingUpstream:
     async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
         result = await self._wrapped.call(server, tool, args)
         async with self._lock:
-            self._rec.record(server, tool, args, result)
+            self._entries.append(
+                {"server": server, "tool": tool, "args": args.copy(), "result": result}
+            )
         return result
 
     async def aclose(self) -> None:
@@ -74,7 +59,7 @@ class RecordingUpstream:
     def save(self, path: str | Path) -> None:
         """Write the recorded trajectory to a JSONL file."""
         Path(path).expanduser().write_text(
-            "\n".join(json.dumps(e, default=str) for e in self._rec.entries) + "\n",
+            "\n".join(json.dumps(e, default=str) for e in self._entries) + "\n",
             encoding="utf-8",
         )
 

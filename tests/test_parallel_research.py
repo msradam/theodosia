@@ -137,6 +137,7 @@ async def test_unknown_source_returns_actionable_error():
                 "action": "research",
                 "inputs": {"query": "x", "sources": ["nope"]},
             },
+            raise_on_error=False,
         )
         out = r.structured_content
         assert out["error"] == "action_error"
@@ -274,6 +275,7 @@ async def test_research_rejects_nonexistent_corpus_dir():
                     "corpus_dir": "/tmp/definitely-does-not-exist-xyz123",
                 },
             },
+            raise_on_error=False,
         )
         out = r.structured_content
         assert out["error"] == "action_error"

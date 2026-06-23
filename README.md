@@ -108,9 +108,21 @@ Theodosia does not include an agent, a model, or a workflow engine. It mounts an
 
 ## Benchmarks (preliminary)
 
-Theodosia's headline property is structural and holds regardless of any accuracy number: every step an agent takes, and every step it was refused, lands in a typed, replayable, hash-chained ledger. The benchmark below is supporting evidence.
+Theodosia's headline property is structural and holds regardless of any accuracy number: every step an agent takes, and every step it was refused, lands in a typed, replayable, hash-chained ledger. The benchmarks below are supporting evidence.
 
-On IBM Research's [ITBench SRE benchmark](https://github.com/itbench-hub/ITBench), scored by the benchmark's own judge, taking one agent (`claude-haiku-4-5`) and gating its procedure with Theodosia significantly improved root-cause entity F1 over the same raw agent (0.561 vs 0.408, paired p<0.01), driven by the gate suppressing noise in the agent's conclusions. Same model, same prompt, same tools, same data; the only change is the gate. Preliminary: one model, one judge, 35 scenarios. Full methodology, the FSM, and the seven validity controls: [theodosia-bench](https://github.com/msradam/theodosia-bench/blob/main/RESULTS.md).
+**ITBench SRE (Claude Haiku 4.5, 35 scenarios).** On IBM Research's [ITBench SRE benchmark](https://github.com/itbench-hub/ITBench), scored by the benchmark's own judge, gating the agent's procedure with Theodosia improved root-cause entity F1 over the raw agent (0.561 vs 0.408, paired p<0.01). Same model, same prompt, same tools, same data; the only change is the gate. Full methodology, the FSM, and the seven validity controls: [theodosia-bench](https://github.com/msradam/theodosia-bench/blob/main/RESULTS.md).
+
+**Small local models (5 open-weight models, M4 Mac Mini, Ollama).** Five models ≤8B were tested against three FSM compliance checks: navigate a multi-stage FSM to terminal, self-correct from a structured refusal using `valid_next_actions`, and receive a correct `isError=True` signal on a raised exception.
+
+| Model | Parameters | FSM navigation | Self-correction | Error signal |
+|---|---|---|---|---|
+| Granite 4.1 8B | 8.8B | ✓ | ✓ | ✓ |
+| Qwen3 8B | 8B | ✓ | ✓ | ✓ |
+| Nemotron Nano 4B | 3.5B active | ✓ | ✓ | — |
+| Llama 3.1 8B | 8B | ✗ | ✗ | ✗ |
+| Phi4-mini | 3.8B | ✗ | ✗ | ✗ |
+
+Nemotron Nano's "—" on error signal: the model declined to pass the deliberately invalid inputs, so the exception was never triggered. Llama 3.1 stalled before the terminal state and ignored tools entirely on the refusal test. Phi4-mini emitted no tool calls across all three tests. Parameter count does not predict protocol compliance; the models trained explicitly on structured tool-calling formats pass, the others do not. The `tests/smoke/test_ollama.py` suite is reproducible against any Ollama instance.
 
 ## Command line
 

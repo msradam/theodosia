@@ -8,6 +8,42 @@ versioning.
 
 _Nothing yet._
 
+## [0.6.0] - 2026-06-22
+
+Action schemas in server instructions, correct MCP error semantics, and
+per-slug UI accent colors. FastMCP bumped to 3.4.
+
+### Changed
+
+- **Breaking**: `action_error` and `action_timeout` results now set
+  `isError=True` in the MCP `CallToolResult`. Callers that invoke `call_tool`
+  without `raise_on_error=False` will receive a `ToolError` instead of
+  structured content for these two cases. FSM guidance refusals
+  (`invalid_transition`, `validation_failed`, `unknown_action`) are
+  unchanged: they remain structured JSON with `valid_next_actions` and are
+  not errors.
+- FastMCP requirement bumped to `>=3.4,<4.0`.
+
+### Added
+
+- Action schemas embedded in server instructions at connect time. Every
+  action's input schema (parameter names, types, required vs optional,
+  defaults, enum values) is rendered into the MCP server's `instructions`
+  string so a connecting model knows the full call surface before its first
+  tool use. Models no longer need to read `theodosia://graph` for cold-start
+  discovery.
+- `brand_tokens(slug)` in `theodosia.tokens`: derives a stable HSL accent
+  triple from a SHA-256 hash of the slug. Rebranded CLIs (`build_cli`) get
+  unique accent colors without any config; `"theodosia"` returns `LIGHT`
+  unchanged.
+- `tokens` parameter on `serve_themed` and `build_themed_assets` so the
+  session console UI reflects the CLI's accent color.
+
+### Removed
+
+- `_experimental/modes.py` (dead code, no callers).
+- Six unused Pydantic models from `_step_schema.py`.
+
 ## [0.5.0] - 2026-06-18
 
 Progressive action disclosure on the step hot path and a tag lens over the

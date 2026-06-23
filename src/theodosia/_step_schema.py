@@ -12,79 +12,7 @@ data to land in one of these shapes.
 
 from __future__ import annotations
 
-import typing
 from typing import Any
-
-import pydantic
-
-
-class _StepSuccess(pydantic.BaseModel):
-    """Successful step: action ran, state advanced."""
-
-    action: str
-    result: dict[str, Any] | None = None
-    state: dict[str, Any]
-    valid_next_actions: list[str]
-    app_id: str
-    tracker_project: str | None = None
-    streamed: bool | None = None
-    chunks: int | None = None
-
-
-class _StepUnknownAction(pydantic.BaseModel):
-    """Refusal: requested action name is not in the FSM.
-
-    Carries the same steering fields as ``_StepInvalidTransition``
-    (``valid_next_actions`` + ``message``, plus a ``next_hint`` appended
-    by the reactive-hint layer) so a model that hallucinated a name can
-    recover from the response alone. ``known_actions`` is retained for
-    spotting typos against the full namespace.
-    """
-
-    error: typing.Literal["unknown_action"]
-    requested: str
-    known_actions: list[str]
-    valid_next_actions: list[str]
-    message: str
-
-
-class _StepInvalidTransition(pydantic.BaseModel):
-    """Refusal: action exists but is not reachable from current state."""
-
-    error: typing.Literal["invalid_transition"]
-    requested: str
-    valid_next_actions: list[str]
-    message: str
-
-
-class _StepValidationFailed(pydantic.BaseModel):
-    """Refusal: input validation rejected the call before dispatch."""
-
-    error: typing.Literal["validation_failed"]
-    requested: str
-    reason: str
-    details: dict[str, Any] | None = None
-    valid_next_actions: list[str]
-
-
-class _StepActionTimeout(pydantic.BaseModel):
-    """Refusal: action exceeded its timeout budget."""
-
-    error: typing.Literal["action_timeout"]
-    requested: str
-    timeout_seconds: float
-    message: str
-    valid_next_actions: list[str]
-
-
-class _StepActionError(pydantic.BaseModel):
-    """Refusal: action body raised an exception."""
-
-    error: typing.Literal["action_error"]
-    requested: str
-    error_type: str
-    error_message: str
-    valid_next_actions: list[str]
 
 
 def _step_response_schema() -> dict[str, Any]:

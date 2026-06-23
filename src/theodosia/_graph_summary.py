@@ -88,25 +88,45 @@ def _state_json_schema(app: Application[Any]) -> dict[str, Any] | None:
     return None
 
 
+def _schema_to_type_str(schema: dict[str, Any]) -> str:
+    """Compact type string for one parameter schema."""
+    if "enum" in schema:
+        return "|".join(repr(v) for v in schema["enum"])
+    t = schema.get("type", "any")
+    if t == "array":
+        items = schema.get("items", {})
+        inner = _schema_to_type_str(items) if items else "any"
+        return f"list[{inner}]"
+    return str(t)
+
+
 def _render_action_surface(app: Application[Any]) -> str:
     """Render a compact text summary of the FSM's action + transition surface.
 
-    Appended to the server's `instructions` so an MCP client sees the
-    action namespace at connect time, before reading any resources. The
-    first line of each action's docstring (if any) becomes its summary;
-    transitions show source and target, plus a `(when: expr)` clause for
-    conditional edges. Inputs are deliberately omitted; they live on the
-    `step` tool's argument schema (or `theodosia://graph` for full detail).
+    Appended to the server's ``instructions`` so an MCP client sees the
+    full action namespace at connect time without reading any resources.
+    Each action line includes the first docstring line and a compact
+    ``inputs:`` clause with type and required/optional annotation, so the
+    model knows exactly what arguments to supply without a separate
+    ``theodosia://graph`` read.
     """
     lines: list[str] = []
     entry = getattr(app, "entrypoint", None)
-    if entry:
-        lines.append(f"Actions (entry: {entry}):")
-    else:
-        lines.append("Actions:")
+    lines.append(f"Actions (entry: {entry}):" if entry else "Actions:")
     for a in app.graph.actions:
         first = _first_doc_line(a)
         lines.append(f"  - {a.name}: {first}" if first else f"  - {a.name}")
+        required, optional = _action_inputs(a)
+        schemas = _input_schemas(a)
+        req_parts = [f"{p} ({_schema_to_type_str(schemas.get(p, {}))}, required)" for p in required]
+        opt_parts = [
+            f"{p} ({_schema_to_type_str(s := schemas.get(p, {}))}, optional"
+            + (f", default={s.get('default')!r}" if s.get("default") is not None else "")
+            + ")"
+            for p in optional
+        ]
+        if req_parts or opt_parts:
+            lines.append(f"    inputs: {', '.join(req_parts + opt_parts)}")
 
     lines.extend(("", "Transitions:"))
     for t in app.graph.transitions:

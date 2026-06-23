@@ -15,10 +15,11 @@ Subcommands:
   theodosia verify [id]            Verify a session's tamper-evident ledger.
   theodosia render <target>        Render the FSM graph as text / mermaid / dot.
 
-Every observability command reads ``~/.theodosia`` (Burr's
-``LocalTrackingClient`` storage), so it works against any session a
-mounted server has written, including those running right now in
-another process.
+Every observability command reads ``~/.{prog_name}`` (Burr's
+``LocalTrackingClient`` storage) — ``~/.theodosia`` for the default
+CLI, or the brand-derived directory for a rebrand — so it works
+against any session a mounted server has written, including those
+running right now in another process.
 
 Implementation lives in submodules grouped by command family. This
 ``__init__`` keeps the public import surface flat: existing callers
