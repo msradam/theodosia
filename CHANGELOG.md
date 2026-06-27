@@ -8,6 +8,48 @@ versioning.
 
 _Nothing yet._
 
+## [0.8.0] - 2026-06-27
+
+Lazy tracking (a session leaves a trace only when it does something), session
+ergonomics, and a tested cross-framework integration surface. Additive
+throughout; no breaking changes.
+
+### Added
+
+- **`LazyTrackingClient` (default for `theodosia.tracker()`).** Persists on the
+  first step rather than on app-create, so a session that only answers reads (an
+  MCP discovery/probe connection) leaves no empty dir on disk. `tracker(...)`
+  returns it by default; `tracker(lazy=False)` restores the stock
+  `LocalTrackingClient`. A refusal flushes a proper dir (it is a real
+  interaction); a flush failure is logged, never raised.
+- **Cross-project spawn guard.** `LazyTrackingClient` no longer lets a
+  `with_spawning_parent` whose parent lives in a different project fabricate a
+  metadata-less parent dir (which broke the Burr UI's "load every dir as an
+  app").
+- **`mount(session_app_id=callable)`.** Maps the session id to the Burr `app_id`
+  for builder factories, for a human-readable, name-sortable tracking id (e.g. a
+  UTC timestamp) instead of the bare session id.
+- **Richer `theodosia://session`:** adds `fastmcp_session_id` (the stable
+  session key, distinct from a custom `app_id`), `tracker_project`, and
+  `persisted` (false until the first step under lazy tracking).
+- **Serve-time env toggles for embedding in agent frameworks:**
+  `THEODOSIA_QUIET` (suppress the FastMCP startup banner), `THEODOSIA_SINGLE_BLOCK`
+  (emit the step result as one JSON content block, for adapters that mangle a
+  multi-block result), and `THEODOSIA_STRICT_ERRORS` (mark guidance refusals as
+  MCP errors so a framework's tool-error routing fires; the structured payload
+  is unchanged). All default off and behaviour-preserving.
+- The `step` tool description now carries the recovery contract (read
+  `valid_next_actions` / `next_action_schemas`, retry on a refusal), so a
+  tool-only agent can drive the FSM without reading any resource.
+
+### Examples
+
+- `examples/integrations/` now covers mounting an audited workflow into
+  Strands, LangGraph, PydanticAI, CrewAI, and BeeAI, each driving the gated
+  `deploy_approval` FSM next to a native tool, with a README of the recipe and
+  the two gotchas every MCP-client framework hits (one MCP session is one FSM
+  run; resources reach the agent through the tool channel).
+
 ## [0.7.0] - 2026-06-27
 
 Identity binding, durable-resume fidelity, a wider introspection surface, and

@@ -480,6 +480,7 @@ def _build_session_app(
     session_id: str,
     *,
     suppress_tracker: bool = False,
+    session_app_id: Callable[[str], str] | None = None,
 ) -> Application[Any]:
     """Realize one session's Application from a factory's return value.
 
@@ -488,6 +489,11 @@ def _build_session_app(
     ``ApplicationBuilder`` is stamped with ``app_id = session_id`` and built,
     so Burr's tracking dir (``storage_dir/project/<session_id>/``) matches the
     Theodosia session key and never drifts on reset.
+
+    ``session_app_id`` (a ``mount`` hook) maps the session id to a custom Burr
+    ``app_id`` for builder factories, e.g. a timestamped, name-sortable id like
+    ``20260627T171435-841aac`` instead of the bare ``session_id``. Default
+    keeps ``app_id = session_id``.
 
     ``suppress_tracker`` nulls the builder's tracker before building, used for
     the mount-time introspection template so it doesn't write a phantom
@@ -505,7 +511,8 @@ def _build_session_app(
                 a for a in produced.lifecycle_adapters if a is not produced.tracker
             ]
             produced.tracker = None
-        return produced.with_identifiers(app_id=session_id).build()
+        app_id = session_app_id(session_id) if session_app_id is not None else session_id
+        return produced.with_identifiers(app_id=app_id).build()
     if isinstance(produced, Application):
         return produced
     raise TypeError(
@@ -530,6 +537,7 @@ def _builder_has_local_tracker(builder: ApplicationBuilder[Any]) -> bool:
 
 def _resolve(
     application: ApplicationOrFactory,
+    session_app_id: Callable[[str], str] | None = None,
 ) -> tuple[Application[Any], ApplicationFactory | None, bool]:
     """Split ``application`` into ``(template, factory, sessions_tracked)``.
 
@@ -552,7 +560,7 @@ def _resolve(
         user_factory = application
 
         def session_factory(session_id: str) -> Application[Any]:
-            return _build_session_app(user_factory(), session_id)
+            return _build_session_app(user_factory(), session_id, session_app_id=session_app_id)
 
         produced = user_factory()
         if isinstance(produced, ApplicationBuilder):
@@ -1021,6 +1029,7 @@ from theodosia._responses import (  # noqa: E402
     _has_local_tracker,
     _refusal_headline,
     _step_tool_result,
+    _strict_errors,
     _success_headline,
 )
 
@@ -1125,16 +1134,24 @@ def _pointer_dict(pointer: Any) -> dict[str, Any] | None:
     }
 
 
-def _session_coordinates(app: Application[Any]) -> dict[str, Any]:
+def _session_coordinates(
+    app: Application[Any], fastmcp_session_id: str | None = None
+) -> dict[str, Any]:
     """Build the ``theodosia://session`` payload: tracker coordinates.
 
     ``project`` and ``app_dir`` are null when no ``LocalTrackingClient``
     is attached; ``app_id`` and ``partition_key`` are always populated
-    because they live on the Application directly. ``sequence_id`` and
-    ``current_action`` (the action auto-routing would run next) track run
-    progress. ``parent`` / ``spawning_parent`` give *this* mounted app's own
-    fork/spawn ancestry, which is null for a root session (the usual case) and
-    populated only when the mounted Application was itself built with a
+    because they live on the Application directly. ``fastmcp_session_id`` is the
+    stable FastMCP session key (equal to ``app_id`` for a builder factory, but
+    distinct for a built-Application factory). ``tracker_project`` mirrors
+    ``project`` under the step-payload key so a client can reconstruct
+    ``app_dir`` from project + app_id. ``persisted`` is whether the session has
+    flushed to disk yet (false until the first step under lazy tracking), so a
+    client can show "no trace yet" instead of pointing at a missing dir.
+    ``sequence_id`` and ``current_action`` (the action auto-routing would run
+    next) track run progress. ``parent`` / ``spawning_parent`` give *this*
+    mounted app's own fork/spawn ancestry, which is null for a root session (the
+    usual case) and populated only when the mounted Application was built with a
     parent/spawning pointer. To see the descendants a session spawned, read
     ``theodosia://children`` (the populated direction for a fan-out).
     """
@@ -1156,11 +1173,15 @@ def _session_coordinates(app: Application[Any]) -> dict[str, Any]:
         next_action = app.get_next_action()
     except Exception:
         next_action = None
+    persisted = app_dir is not None and Path(app_dir).exists()
     return {
         "project": project,
         "app_id": app.uid,
         "app_dir": app_dir,
         "partition_key": getattr(app, "_partition_key", None),
+        "fastmcp_session_id": fastmcp_session_id,
+        "tracker_project": project,
+        "persisted": persisted,
         "sequence_id": app.sequence_id,
         "current_action": next_action.name if next_action is not None else None,
         "parent": _pointer_dict(app.parent_pointer),
@@ -1478,7 +1499,8 @@ def _register_resources(
         Application directly.
         """
         app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        return json.dumps(_session_coordinates(app), indent=2)
+        fastmcp_session_id = ctx.session_id if ctx is not None else None
+        return json.dumps(_session_coordinates(app, fastmcp_session_id), indent=2)
 
 
 def _register_personas(
@@ -1698,8 +1720,10 @@ async def _handle_step_refusal(
     await _emit_log(ctx, headline)
     # action_error / action_timeout are genuine execution failures; the FSM
     # guidance refusals (invalid_transition, validation_failed, unknown_action)
-    # carry valid_next_actions for self-correction and should not be errors.
-    is_error = isinstance(exc, (ActionExecutionError, ActionTimeoutError))
+    # carry valid_next_actions for self-correction and are not errors by
+    # default. THEODOSIA_STRICT_ERRORS flips guidance refusals to MCP errors too
+    # (keeping the payload), so a framework's tool-error routing fires on them.
+    is_error = isinstance(exc, (ActionExecutionError, ActionTimeoutError)) or _strict_errors()
     return _step_tool_result(response, headline, is_error=is_error)
 
 
@@ -1819,6 +1843,17 @@ def _register_step_tool(
         ctx: Context | None = None,
     ) -> ToolResult:
         """Advance the FSM by one transition.
+
+        How to drive this from an agent that only sees tools: every result
+        carries ``valid_next_actions`` (what you may call next) and
+        ``next_action_schemas`` (the exact inputs each of those takes, including
+        nested object shapes). Pick the next ``action`` from
+        ``valid_next_actions`` and supply ``inputs`` from its
+        ``next_action_schemas`` entry. A ``×`` refusal
+        (``invalid_transition`` / ``validation_failed`` / ``unknown_action``)
+        is not a crash: read ``error`` and ``valid_next_actions`` and retry
+        with a valid call. The action list below shows the entry actions and
+        their inputs to get you started.
 
         Args:
             action: Name of the action to run. Must be in the
@@ -2579,6 +2614,7 @@ def mount(
     upstream: dict[str, Any] | None = None,
     hooks: list[Any] | None = None,
     middleware: list[Any] | None = None,
+    session_app_id: Callable[[str], str] | None = None,
 ) -> FastMCP:
     """Return a FastMCP server that exposes ``application`` per ``mode``.
 
@@ -2714,6 +2750,14 @@ def mount(
             ``RateLimitingMiddleware``. Order matters: middleware added
             earlier wraps later ones, so these run inside the coercion
             layer (they see post-coercion args).
+        session_app_id: Optional ``(session_id) -> str`` hook that maps the
+            FastMCP session id to the Burr ``app_id`` for builder factories.
+            Use it for a human-readable, name-sortable tracking id such as a
+            UTC timestamp (``20260627T171435-841aac``) instead of the bare
+            session id. The result becomes the tracking dir name, so it must be
+            filesystem-safe and unique per session (incorporate the session id
+            or a timestamp). Default keeps ``app_id = session_id``. Ignored for
+            a factory that returns a built ``Application`` (its id is frozen).
     """
     from theodosia.assembly import Assembly
 
@@ -2739,7 +2783,7 @@ def mount(
         )
 
     _silence_fastmcp_loggers()
-    shared_app, factory, sessions_tracked = _resolve(application)
+    shared_app, factory, sessions_tracked = _resolve(application, session_app_id)
     if factory is None:
         _warn_shared_app_mode()
 

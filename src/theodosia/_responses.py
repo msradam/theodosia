@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from typing import Any
 
 from burr.core import Application
@@ -36,15 +37,28 @@ async def _emit_log(ctx: Context | None, msg: str) -> None:
         await ctx.info(msg)
 
 
+def _strict_errors() -> bool:
+    """Whether to mark guidance refusals as MCP errors (``THEODOSIA_STRICT_ERRORS``).
+
+    Off by default: ``invalid_transition`` / ``validation_failed`` /
+    ``unknown_action`` come back as ordinary structured results carrying
+    ``valid_next_actions`` for self-correction. Set the env var so an agent
+    framework's error-routing (LangGraph error edges, CrewAI/BeeAI tool-error
+    retry) sees a refusal as an error. The structured payload is unchanged, so
+    the recovery fields are still there.
+    """
+    return bool(os.environ.get("THEODOSIA_STRICT_ERRORS"))
+
+
 def _step_tool_result(body: dict[str, Any], headline: str, *, is_error: bool = False) -> ToolResult:
-    return ToolResult(
-        content=[
-            TextContent(type="text", text=headline),
-            TextContent(type="text", text=json.dumps(body, default=str)),
-        ],
-        structured_content=body,
-        is_error=is_error,
-    )
+    # Default: a human headline block + a JSON block, plus structured_content.
+    # ``THEODOSIA_SINGLE_BLOCK`` emits the JSON alone, for MCP client adapters
+    # that mangle a multi-block result (e.g. stringify the list) or ignore
+    # structured_content and read only ``content[0]``.
+    blocks = [TextContent(type="text", text=json.dumps(body, default=str))]
+    if not os.environ.get("THEODOSIA_SINGLE_BLOCK"):
+        blocks.insert(0, TextContent(type="text", text=headline))
+    return ToolResult(content=blocks, structured_content=body, is_error=is_error)
 
 
 def _success_headline(seq: int, action: str, valid_next: list[str]) -> str:

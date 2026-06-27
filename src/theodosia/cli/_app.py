@@ -135,14 +135,17 @@ def serve(
     if transport_norm in ("http", "sse", "streamable-http"):
         path = "/sse" if transport_norm == "sse" else "/mcp"
         typer.echo(f"MCP endpoint: http://{host}:{port}{path}", err=True)
+    # THEODOSIA_QUIET suppresses FastMCP's startup banner, which otherwise
+    # prints to stderr and clutters an embedding agent's console.
+    banner = not os.environ.get("THEODOSIA_QUIET")
     if transport_norm == "stdio":
-        server.run(transport="stdio")
+        server.run(transport="stdio", show_banner=banner)
     elif transport_norm == "http":
-        server.run(transport="http", host=host, port=port)
+        server.run(transport="http", host=host, port=port, show_banner=banner)
     elif transport_norm == "sse":
-        server.run(transport="sse", host=host, port=port)
+        server.run(transport="sse", host=host, port=port, show_banner=banner)
     elif transport_norm == "streamable-http":
-        server.run(transport="streamable-http", host=host, port=port)
+        server.run(transport="streamable-http", host=host, port=port, show_banner=banner)
     else:
         raise typer.BadParameter(
             f"unknown transport {transport!r}; expected stdio, http, sse, or streamable-http"

@@ -29,6 +29,29 @@ from burr.core import Application
 from theodosia._tracker import _tracker_log_path
 from theodosia.ledger import HashChainedLedger
 
+
+def _ensure_tracker_persisted(app: Application[Any]) -> None:
+    """Flush a lazy tracker so its dir exists before a sidecar/ledger write.
+
+    Under ``LazyTrackingClient`` the dir is created on Burr's first
+    ``pre_run_step``, which an invalid transition never reaches. A refusal (or
+    its ledger entry) is still a real interaction, so flush here to create a
+    proper dir rather than letting the write fail against a missing one. No-op
+    for a non-lazy tracker.
+
+    The flush writes graph.json/metadata.json (and runs ``get_source`` on
+    actions), so it can raise ``OSError`` (read-only FS, ENOSPC) or an
+    unguarded ``OSError`` from a lambda/REPL action. Swallow and log at WARNING,
+    matching the callers' contract that an audit-log write never blocks a step.
+    """
+    persist = getattr(getattr(app, "_tracker", None), "ensure_persisted", None)
+    if callable(persist):
+        try:
+            persist()
+        except Exception as exc:
+            _LOG.warning("theodosia lazy-tracker flush failed: %s", exc)
+
+
 _LOG = logging.getLogger("theodosia")
 _KEY_WARNING_EMITTED = False
 _KEY_WARNING_LOCK = threading.Lock()
@@ -104,6 +127,7 @@ def _append_ledger(app: Application[Any], record: dict[str, Any]) -> None:
     log_path = _tracker_log_path(app)
     if log_path is None:
         return
+    _ensure_tracker_persisted(app)
     _warn_unkeyed_once()
     ledger_path = log_path.parent / "ledger.jsonl"
     key = str(ledger_path)
@@ -135,6 +159,7 @@ def _append_refusal_sidecar(app: Application[Any], record: dict[str, Any]) -> No
     log_path = _tracker_log_path(app)
     if log_path is None:
         return
+    _ensure_tracker_persisted(app)
     sidecar = log_path.parent / "refusals.jsonl"
     try:
         with sidecar.open("a", encoding="utf-8") as fh:

@@ -102,6 +102,10 @@ A client that calls `pay` before `take_order` gets a structured refusal it can r
 
 Full reference (Persona, Assembly, hooks, middleware, tracker, `drive_claude`) lives in the [docs](https://msradam.github.io/theodosia/).
 
+## Use it in your existing agent framework
+
+A mounted server is a plain MCP server, so any agent framework with an MCP client can mount an audited workflow as one tool among its own, with no Theodosia or Burr knowledge. The gates and the tamper-evident ledger ride inside the `step` tool and hold server-side regardless of what the agent tries. Dogfooded end to end against [Strands](examples/integrations/strands_data_pipeline/), [LangGraph](examples/integrations/langgraph_audited_workflow/), [PydanticAI](examples/integrations/pydanticai_audited_workflow/), [CrewAI](examples/integrations/crewai_audited_workflow/), and [BeeAI](examples/integrations/beeai_audited_workflow/); see [`examples/integrations/`](examples/integrations/) for the recipe and the per-framework notes. Three serve-time env toggles tune the wire shape for an embedding client: `THEODOSIA_QUIET` (no startup banner), `THEODOSIA_SINGLE_BLOCK` (single JSON result block), and `THEODOSIA_STRICT_ERRORS` (route guidance refusals through the framework's tool-error path).
+
 ## Scope
 
 Theodosia does not include an agent, a model, or a workflow engine. It mounts an existing Burr `Application` and gates an MCP client's access to it. The rails are only as tight as the graph you author.

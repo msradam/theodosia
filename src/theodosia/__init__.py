@@ -17,6 +17,7 @@ passing ``mode=ServingMode.STEP`` keep working.
 from typing import Any
 
 from theodosia._exceptions import ValidationFailed
+from theodosia._lazy_tracker import LazyTrackingClient
 from theodosia.adapter import (
     ServingMode,
     current_mcp_context,
@@ -58,13 +59,21 @@ def _resolve_version() -> str:
 __version__ = _resolve_version()
 
 
-def tracker(project: str, storage_dir: str | None = None, **kwargs: Any) -> Any:
-    """A Burr ``LocalTrackingClient`` that defaults its store to ``~/.{prog_name}``.
+def tracker(
+    project: str, storage_dir: str | None = None, *, lazy: bool = True, **kwargs: Any
+) -> Any:
+    """A Burr tracking client that defaults its store to ``~/.{prog_name}``.
 
     Use this in your builder (``.with_tracker(theodosia.tracker("my-project"))``)
     to keep LLM-driven session traces separate from code-driven Burr runs, which
     use Burr's own ``~/.burr`` default. It is a thin wrapper; pass any
     ``LocalTrackingClient`` keyword through.
+
+    ``lazy`` (default) returns a :class:`LazyTrackingClient`, which persists on
+    the first step rather than on app-create, so a session that only answers
+    reads (an MCP discovery/probe connection) leaves no empty dir on disk. Pass
+    ``lazy=False`` for the stock ``LocalTrackingClient`` (writes the dir the
+    instant the app is built).
 
     Resolution order for ``storage_dir``: explicit argument wins; otherwise
     the brand-specific env var (e.g. ``HELIOS_HOME`` for a ``helios`` CLI);
@@ -83,8 +92,6 @@ def tracker(project: str, storage_dir: str | None = None, **kwargs: Any) -> Any:
     import contextlib
     import os
 
-    from burr.tracking.client import LocalTrackingClient
-
     if storage_dir is None:
         with contextlib.suppress(Exception):
             from theodosia.cli._branding import _BRANDING, _prog_slug
@@ -97,6 +104,10 @@ def tracker(project: str, storage_dir: str | None = None, **kwargs: Any) -> Any:
             )
     if storage_dir is None:
         storage_dir = "~/.theodosia"
+    if lazy:
+        return LazyTrackingClient(project=project, storage_dir=storage_dir, **kwargs)
+    from burr.tracking.client import LocalTrackingClient
+
     return LocalTrackingClient(project=project, storage_dir=storage_dir, **kwargs)
 
 
@@ -106,6 +117,7 @@ __all__ = [
     "OK",
     "Assembly",
     "HashChainedLedger",
+    "LazyTrackingClient",
     "ServingMode",
     "SourceResult",
     "ToolSpec",

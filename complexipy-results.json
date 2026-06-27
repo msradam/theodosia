@@ -7,7 +7,7 @@
     "refactor_plans": []
   },
   {
-    "complexity": 4,
+    "complexity": 5,
     "file_name": "__init__.py",
     "function_name": "tracker",
     "path": "theodosia/__init__.py",
@@ -426,6 +426,104 @@
   },
   {
     "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::__init__",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::copy",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::do_log_attributes",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::ensure_persisted",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::post_application_create",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::post_end_span",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::post_end_stream",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::post_run_step",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::post_stream_item",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::pre_run_step",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::pre_start_span",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::pre_start_stream",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 2,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::_flush_create",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 5,
+    "file_name": "_lazy_tracker.py",
+    "function_name": "LazyTrackingClient::_log_child_relationships",
+    "path": "theodosia/_lazy_tracker.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 0,
     "file_name": "_ledger.py",
     "function_name": "_ledger_binding",
     "path": "theodosia/_ledger.py",
@@ -442,6 +540,13 @@
     "complexity": 2,
     "file_name": "_ledger.py",
     "function_name": "_append_refusal_sidecar",
+    "path": "theodosia/_ledger.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 3,
+    "file_name": "_ledger.py",
+    "function_name": "_ensure_tracker_persisted",
     "path": "theodosia/_ledger.py",
     "refactor_plans": []
   },
@@ -560,7 +665,7 @@
   {
     "complexity": 0,
     "file_name": "_responses.py",
-    "function_name": "_step_tool_result",
+    "function_name": "_strict_errors",
     "path": "theodosia/_responses.py",
     "refactor_plans": []
   },
@@ -582,6 +687,13 @@
     "complexity": 1,
     "file_name": "_responses.py",
     "function_name": "_refusal_headline",
+    "path": "theodosia/_responses.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "_responses.py",
+    "function_name": "_step_tool_result",
     "path": "theodosia/_responses.py",
     "refactor_plans": []
   },
@@ -742,13 +854,6 @@
   {
     "complexity": 0,
     "file_name": "adapter.py",
-    "function_name": "_handle_step_refusal",
-    "path": "theodosia/adapter.py",
-    "refactor_plans": []
-  },
-  {
-    "complexity": 0,
-    "file_name": "adapter.py",
     "function_name": "_handle_unknown_action",
     "path": "theodosia/adapter.py",
     "refactor_plans": []
@@ -778,6 +883,13 @@
     "complexity": 1,
     "file_name": "adapter.py",
     "function_name": "_builder_has_local_tracker",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
+  },
+  {
+    "complexity": 1,
+    "file_name": "adapter.py",
+    "function_name": "_handle_step_refusal",
     "path": "theodosia/adapter.py",
     "refactor_plans": []
   },
@@ -971,13 +1083,6 @@
     "refactor_plans": []
   },
   {
-    "complexity": 7,
-    "file_name": "adapter.py",
-    "function_name": "_session_coordinates",
-    "path": "theodosia/adapter.py",
-    "refactor_plans": []
-  },
-  {
     "complexity": 8,
     "file_name": "adapter.py",
     "function_name": "_register_reset_tool",
@@ -987,14 +1092,14 @@
   {
     "complexity": 8,
     "file_name": "adapter.py",
-    "function_name": "mount_multi",
+    "function_name": "_session_coordinates",
     "path": "theodosia/adapter.py",
     "refactor_plans": []
   },
   {
-    "complexity": 9,
+    "complexity": 8,
     "file_name": "adapter.py",
-    "function_name": "_build_session_app",
+    "function_name": "mount_multi",
     "path": "theodosia/adapter.py",
     "refactor_plans": []
   },
@@ -1056,9 +1161,9 @@
     "refactor_plans": []
   },
   {
-    "complexity": 10,
+    "complexity": 11,
     "file_name": "adapter.py",
-    "function_name": "_register_resources",
+    "function_name": "_build_session_app",
     "path": "theodosia/adapter.py",
     "refactor_plans": []
   },
@@ -1073,8 +1178,8 @@
         "estimated_complexity_after": 4,
         "estimated_reduction": 7,
         "kind": "extract_helper",
-        "line_end": 1001,
-        "line_start": 979,
+        "line_end": 1009,
+        "line_start": 987,
         "steps": [
           "move the selected block into a private helper",
           "pass required values as parameters",
@@ -1083,6 +1188,13 @@
         "title": "Extract complex block into helper function"
       }
     ]
+  },
+  {
+    "complexity": 12,
+    "file_name": "adapter.py",
+    "function_name": "_register_resources",
+    "path": "theodosia/adapter.py",
+    "refactor_plans": []
   },
   {
     "complexity": 13,
@@ -1214,8 +1326,8 @@
         "estimated_complexity_after": 3,
         "estimated_reduction": 6,
         "kind": "extract_helper",
-        "line_end": 446,
-        "line_start": 425,
+        "line_end": 449,
+        "line_start": 428,
         "steps": [
           "move the selected block into a private helper",
           "pass required values as parameters",
@@ -1236,8 +1348,8 @@
         "estimated_complexity_after": 7,
         "estimated_reduction": 2,
         "kind": "split_dispatcher",
-        "line_end": 149,
-        "line_start": 138,
+        "line_end": 152,
+        "line_start": 141,
         "steps": [
           "create one handler per case",
           "replace the chain with a dispatch table or small delegating match",
