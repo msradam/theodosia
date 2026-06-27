@@ -161,9 +161,15 @@ def _check_ledger_key_mode() -> list[CheckResult]:
 def _resolve_application(application: Any, report: DoctorReport) -> Application[Any] | None:
     """Coax ``application`` into a concrete ``burr.core.Application``.
 
-    Accepts: an Application instance, or a callable returning one.
-    Anything else fails the "is a Burr Application" check.
+    Accepts: an Application instance, or a callable returning either an
+    Application or an unbuilt ``ApplicationBuilder`` (the builder seam, the
+    same shapes ``mount()`` accepts). A returned builder is built with its
+    tracker suppressed, since this is static introspection.
     """
+    from burr.core import ApplicationBuilder
+
+    from theodosia.adapter import _build_session_app
+
     if isinstance(application, Application):
         report.checks.append(
             CheckResult(
@@ -186,22 +192,22 @@ def _resolve_application(application: Any, report: DoctorReport) -> Application[
                 )
             )
             return None
-        if not isinstance(built, Application):
+        if isinstance(built, ApplicationBuilder):
+            built = _build_session_app(built, "theodosia-doctor", suppress_tracker=True)
+            detail = "factory built an Application (from a builder)"
+        elif isinstance(built, Application):
+            detail = "factory built an Application"
+        else:
             report.checks.append(
                 CheckResult(
                     "Resolve target",
                     CheckStatus.FAIL,
-                    f"factory returned {type(built).__name__}, not a Burr Application",
+                    f"factory returned {type(built).__name__}, "
+                    f"not a Burr Application or ApplicationBuilder",
                 )
             )
             return None
-        report.checks.append(
-            CheckResult(
-                "Resolve target",
-                CheckStatus.PASS,
-                "factory built an Application",
-            )
-        )
+        report.checks.append(CheckResult("Resolve target", CheckStatus.PASS, detail))
         return built
 
     report.checks.append(

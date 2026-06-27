@@ -130,6 +130,30 @@ def test_non_callable_non_application_fails():
     assert res.status == CheckStatus.FAIL
 
 
+def test_factory_returning_builder_is_accepted():
+    """doctor must accept the builder seam (() -> ApplicationBuilder), the
+    same shape mount() accepts; static checks then run on the built graph."""
+    from burr.core import ApplicationBuilder
+
+    @action(reads=[], writes=["x"])
+    def go(state: State) -> State:
+        return state.update(x=1)
+
+    def factory() -> ApplicationBuilder:
+        return (
+            ApplicationBuilder()
+            .with_actions(go=go)
+            .with_transitions(("go", "go"))
+            .with_state(x=0)
+            .with_entrypoint("go")
+        )
+
+    report = run_checks(factory)
+    res = _find(report, "Resolve target")
+    assert res.status == CheckStatus.PASS
+    assert "builder" in res.message
+
+
 # ── reachability ────────────────────────────────────────────────────
 
 

@@ -275,3 +275,35 @@ def test_render_annotation_highlights_current_node(tmp_path):
     out = cap.get()
     assert "at: pay" in out
     assert "● pay" in out  # current node marker
+
+
+def test_server_from_target_runs_prebuilt_fastmcp():
+    """serve runs an already-mounted FastMCP (build_server pattern, used to
+    serve an FSM that owns a mount-level upstream) instead of re-mounting."""
+    from fastmcp import FastMCP
+
+    from theodosia import ServingMode, mount
+    from theodosia.cli._app import _server_from_target
+
+    def build_application():
+        import sys
+
+        sys.path.insert(0, "examples")
+        from coffee_order import build_application as _b
+
+        return _b()
+
+    # A FastMCP instance is passed through as-is.
+    prebuilt = mount(build_application, name="prebuilt")
+    assert _server_from_target(prebuilt, mode=ServingMode.STEP, name="x") is prebuilt
+
+    # A callable returning a FastMCP (build_server) is run directly, not mounted.
+    def build_server():
+        return mount(build_application, name="from-build-server")
+
+    out = _server_from_target(build_server, mode=ServingMode.STEP, name="x")
+    assert isinstance(out, FastMCP)
+
+    # A normal factory still gets mounted.
+    mounted = _server_from_target(build_application, mode=ServingMode.STEP, name="plain")
+    assert isinstance(mounted, FastMCP)

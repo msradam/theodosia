@@ -46,6 +46,29 @@ with contextlib.suppress(ImportError):
     _CLICK_EXCEPTIONS = (*_CLICK_EXCEPTIONS, _VendoredClickException)
 
 
+def _server_from_target(application_or_factory: Any, *, mode: ServingMode, name: str) -> Any:
+    """Resolve a serve target to a runnable FastMCP.
+
+    An Application or a factory (``() -> Application`` / builder) is mounted.
+    An already-mounted ``FastMCP`` — or a ``build_server()`` callable returning
+    one — is run as-is; that is how an FSM that owns a mount-level ``upstream``
+    is served (it configured itself, so ``name``/``mode``/brand upstream don't
+    apply).
+    """
+    from fastmcp import FastMCP
+
+    if isinstance(application_or_factory, FastMCP):
+        return application_or_factory
+    try:
+        return mount(application_or_factory, mode=mode, name=name, upstream=_BRANDING.upstream)
+    except TypeError as exc:
+        # mount() expected an Application/builder; a callable returning a
+        # FastMCP (the build_server pattern) is run directly instead.
+        if callable(application_or_factory) and "FastMCP" in str(exc):
+            return application_or_factory()
+        raise
+
+
 def serve(
     target: Annotated[
         str | None,
@@ -95,14 +118,17 @@ def serve(
         typer.Option("--port", help="Port for http/sse transports."),
     ] = 8000,
 ) -> None:
-    """Launch an importable Burr Application or factory as an MCP server."""
+    """Launch an importable Burr Application or factory as an MCP server.
+
+    The target attr is usually a ``burr.core.Application`` or a callable
+    returning one (factory / builder seam). It may also be an already-mounted
+    ``FastMCP`` — or a ``build_server()`` callable returning one — which is the
+    way to serve an FSM that owns a mount-level ``upstream`` config; in that
+    case the pre-mounted server is run as-is (``--name`` / ``--mode`` / brand
+    upstream don't apply, since it configured itself).
+    """
     application_or_factory, derived_name = _resolve_serve_target(target, app_dir or [])
-    server = mount(
-        application_or_factory,
-        mode=mode,
-        name=name or derived_name,
-        upstream=_BRANDING.upstream,
-    )
+    server = _server_from_target(application_or_factory, mode=mode, name=name or derived_name)
     transport_norm = transport.lower()
     # FastMCP serves at a path tail, so a client connecting to the bare
     # host:port gets a 404. Echo the full URL.

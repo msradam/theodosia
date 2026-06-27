@@ -3,73 +3,34 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 from rich.console import Group
 from rich.live import Live
 from rich.text import Text
 
+from theodosia._diagram import (
+    _render_dot,
+    _render_mermaid,
+    _Topology,
+    _topology_from_app,
+)
 from theodosia.cli._branding import _BRANDING, console
 from theodosia.cli._resolve import _resolve_app, _resolve_home, _resolve_serve_target
 from theodosia.cli._steps import _read_steps
 
 
-@dataclass
-class _Topology:
-    name: str
-    entry: str | None
-    actions: list[str]
-    edges: list[tuple[str, str, str | None]]  # (from, to, condition)
-
-    def out_edges(self, node: str) -> list[tuple[str, str | None]]:
-        return [(to, cond) for frm, to, cond in self.edges if frm == node]
-
-    def is_terminal(self, node: str) -> bool:
-        return not any(frm == node for frm, _to, _c in self.edges)
-
-    def has_self_loop(self, node: str) -> bool:
-        return any(frm == node == to for frm, to, _c in self.edges)
-
-
 def _topology(target: str | None, app_dir: list[str], name: str) -> _Topology:
     app_or_factory, derived = _resolve_serve_target(target, app_dir)
-    app = app_or_factory() if callable(app_or_factory) else app_or_factory
-    graph = app.graph
-    entry = graph.entrypoint.name if getattr(graph, "entrypoint", None) else None
-    actions = [a.name for a in graph.actions]
-    edges = [(t.from_.name, t.to.name, _condition_label(t.condition)) for t in graph.transitions]
-    return _Topology(name=name or derived, entry=entry, actions=actions, edges=edges)
+    if callable(app_or_factory):
+        from theodosia.adapter import _build_session_app
 
-
-def _condition_label(condition: Any) -> str | None:
-    """Human label for a transition condition, or None for the default (always)."""
-    name = getattr(condition, "name", None)
-    return None if not name or name == "default" else name
-
-
-def _render_mermaid(topo: _Topology, *, conditions: bool) -> str:
-    lines = ["stateDiagram-v2"]
-    if topo.entry:
-        lines.append(f"    [*] --> {topo.entry}")
-    for frm, to, cond in topo.edges:
-        label = f" : {cond}" if conditions and cond else ""
-        lines.append(f"    {frm} --> {to}{label}")
-    lines.extend(f"    {node} --> [*]" for node in topo.actions if topo.is_terminal(node))
-    return "\n".join(lines)
-
-
-def _render_dot(topo: _Topology, *, conditions: bool) -> str:
-    lines = ["digraph G {", "    rankdir=LR;", "    node [shape=box, style=rounded];"]
-    if topo.entry:
-        lines.extend(("    __start__ [shape=point];", f'    __start__ -> "{topo.entry}";'))
-    for frm, to, cond in topo.edges:
-        label = f' [label="{cond}"]' if conditions and cond else ""
-        lines.append(f'    "{frm}" -> "{to}"{label};')
-    lines.append("}")
-    return "\n".join(lines)
+        app = _build_session_app(app_or_factory(), "theodosia-topology", suppress_tracker=True)
+    else:
+        app = app_or_factory
+    return _topology_from_app(app, name or derived)
 
 
 def _session_progress(

@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import sys
 
+from theodosia._diagram import _condition_label as _condition_label
+from theodosia._diagram import _Topology as _Topology
 from theodosia.cli._app import build_cli, doctor, run, serve, ui
 
 # Intentional re-exports of underscored helpers that tests and
@@ -52,10 +54,8 @@ from theodosia.cli._steps import _exception_summary as _exception_summary
 from theodosia.cli._steps import _read_refusals as _read_refusals
 from theodosia.cli._steps import _read_steps as _read_steps
 from theodosia.cli._steps import _state_diff_text as _state_diff_text
-from theodosia.cli._topology import _condition_label as _condition_label
 from theodosia.cli._topology import _graph_renderable as _graph_renderable
 from theodosia.cli._topology import _session_progress as _session_progress
-from theodosia.cli._topology import _Topology as _Topology
 
 # Function name collides with submodule path ``theodosia.cli._topology``;
 # this re-export shadows the submodule attribute so ``cli._topology(target,

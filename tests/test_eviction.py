@@ -15,17 +15,22 @@ from coffee_order import build_application
 from theodosia.adapter import _SessionStore
 
 
+def session_factory(_session_id):
+    """Session-aware wrapper: the store's factory is ``(session_id) -> App``."""
+    return build_application()
+
+
 def test_ttl_eviction_drops_stale_entries():
     """An entry older than ttl_seconds is evicted on the next access."""
     store = _SessionStore(ttl_seconds=1, max_sessions=None)
-    store.get_or_create("session-a", build_application)
+    store.get_or_create("session-a", session_factory)
     assert len(store) == 1
 
     # Backdate the entry so eviction sees it as stale.
     store._entries["session-a"].last_access = time.monotonic() - 10
 
     # Any access triggers a sweep.
-    store.get_or_create("session-b", build_application)
+    store.get_or_create("session-b", session_factory)
     assert "session-a" not in store._entries
     assert "session-b" in store._entries
 
@@ -33,12 +38,12 @@ def test_ttl_eviction_drops_stale_entries():
 def test_max_size_eviction_drops_oldest():
     """When max_sessions is reached, the LRU entry is evicted on insert."""
     store = _SessionStore(ttl_seconds=None, max_sessions=2)
-    store.get_or_create("a", build_application)
+    store.get_or_create("a", session_factory)
     # Make 'a' older than 'b' so 'a' is the LRU when we add a third.
     store._entries["a"].last_access = time.monotonic() - 5
-    store.get_or_create("b", build_application)
+    store.get_or_create("b", session_factory)
 
-    store.get_or_create("c", build_application)
+    store.get_or_create("c", session_factory)
     assert "a" not in store._entries
     assert {"b", "c"} <= set(store._entries)
 
@@ -47,32 +52,32 @@ def test_no_eviction_when_both_disabled():
     """ttl_seconds=None and max_sessions=None means unbounded."""
     store = _SessionStore(ttl_seconds=None, max_sessions=None)
     for i in range(20):
-        store.get_or_create(f"s{i}", build_application)
+        store.get_or_create(f"s{i}", session_factory)
     assert len(store) == 20
 
 
 def test_history_survives_recent_access():
     """An entry accessed recently keeps its history across the eviction sweep."""
     store = _SessionStore(ttl_seconds=1, max_sessions=None)
-    entry = store.get_or_create("a", build_application)
+    entry = store.get_or_create("a", session_factory)
     entry.history.append({"seq": 0, "action": "x"})
 
     # Trigger another get; entry is still fresh.
-    store.get_or_create("a", build_application)
+    store.get_or_create("a", session_factory)
     assert store.history("a") == [{"seq": 0, "action": "x"}]
 
 
 def test_evicted_session_starts_fresh_application():
     """After TTL eviction, the next call builds a new Application via the factory."""
     store = _SessionStore(ttl_seconds=1, max_sessions=None)
-    entry_v1 = store.get_or_create("a", build_application)
+    entry_v1 = store.get_or_create("a", session_factory)
     app_v1 = entry_v1.application
     entry_v1.history.append({"seq": 0, "action": "x"})
 
     # Force expiry.
     store._entries["a"].last_access = time.monotonic() - 10
 
-    entry_v2 = store.get_or_create("a", build_application)
+    entry_v2 = store.get_or_create("a", session_factory)
     app_v2 = entry_v2.application
     assert app_v2 is not app_v1, "eviction should have replaced the Application"
     assert entry_v2.history == [], "fresh entry, no carryover history"

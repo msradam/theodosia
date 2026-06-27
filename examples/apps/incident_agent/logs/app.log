@@ -1,0 +1,12 @@
+2026-06-26T09:00:01Z INFO  checkout-svc started pid=1 build=2026.06.26-r4 rss_mb=312
+2026-06-26T09:05:00Z INFO  checkout-svc healthy rss_mb=318 inflight=42 p99_ms=88
+2026-06-26T09:35:00Z INFO  checkout-svc healthy rss_mb=515 inflight=51 p99_ms=94
+2026-06-26T10:05:00Z INFO  checkout-svc healthy rss_mb=742 inflight=49 p99_ms=131
+2026-06-26T10:35:00Z WARN  checkout-svc rss_mb=1063 inflight=53 p99_ms=240 note=heap growth tracking inflight steady
+2026-06-26T11:05:00Z WARN  checkout-svc rss_mb=1488 inflight=50 p99_ms=470 gc_pause_ms=210
+2026-06-26T11:20:00Z WARN  CartCache entries=1.9M evictions=0 note=cache never evicts, ttl unset
+2026-06-26T11:35:00Z ERROR checkout-svc rss_mb=1907 inflight=48 p99_ms=910 gc_pause_ms=640 note=full GC not reclaiming
+2026-06-26T11:50:00Z ERROR checkout-svc rss_mb=2034 OutOfMemoryError: Java heap space at com.shop.cart.CartCache.put(CartCache.java:88)
+2026-06-26T11:50:02Z FATAL checkout-svc kernel oom-killer: Killed process 1 (java) total-vm:4194304kB anon-rss:2096128kB
+2026-06-26T11:50:30Z INFO  checkout-svc started pid=1 build=2026.06.26-r4 rss_mb=309 note=restart by orchestrator
+2026-06-26T12:20:00Z WARN  checkout-svc rss_mb=1102 inflight=50 p99_ms=300 note=same growth slope after restart

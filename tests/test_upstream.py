@@ -153,3 +153,127 @@ async def test_upstream_tool_error_carries_structured_fields(tmp_path):
 def test_upstream_error_binding_failures_have_no_fields():
     err = UpstreamError("no manager bound")
     assert err.server is None and err.tool is None and err.body is None
+
+
+# ── per-session upstream isolation ──────────────────────────────────────
+
+
+def test_config_is_per_session_detects_placeholder():
+    from theodosia.upstream import _config_is_per_session
+
+    assert _config_is_per_session({"m": {"env": {"FILE": "/d/{session}.json"}}})
+    assert _config_is_per_session({"m": {"args": ["x", "{session}"]}})
+    assert not _config_is_per_session({"m": {"command": "npx", "args": ["x"]}})
+    assert not _config_is_per_session(None)
+
+
+def test_substitute_session_replaces_and_sanitizes():
+    from theodosia.upstream import substitute_session
+
+    cfg = {"m": {"args": ["{session}/data"], "env": {"P": "/d/{session}.json"}}}
+    out = substitute_session(cfg, "ab/cd-12")
+    assert out["m"]["args"] == ["ab_cd-12/data"]  # '/' sanitized
+    assert out["m"]["env"]["P"] == "/d/ab_cd-12.json"
+
+
+def test_resolve_upstream_splits_shared_vs_per_session():
+    from theodosia.adapter import _resolve_upstream
+
+    shared, cfg = _resolve_upstream({"m": {"command": "npx", "args": ["x"]}})
+    assert shared is not None and cfg is None  # plain config -> shared manager
+
+    shared2, cfg2 = _resolve_upstream({"m": {"env": {"F": "{session}.json"}}})
+    assert shared2 is None and cfg2 is not None  # placeholder -> per-session config
+
+    assert _resolve_upstream(None) == (None, None)
+
+
+def test_evicted_session_upstream_is_queued_for_close():
+    from theodosia.adapter import _SessionStore
+
+    class _Mgr:
+        pass
+
+    store = _SessionStore(ttl_seconds=None, max_sessions=2)
+    e = store.get_or_create("a", lambda _sid: None)
+    e.upstream = _Mgr()
+    # Fill past max so 'a' (LRU) is evicted.
+    store.get_or_create("b", lambda _sid: None)
+    store.get_or_create("c", lambda _sid: None)
+    closables = store.take_closables()
+    assert e.upstream in closables
+    assert store.take_closables() == []  # drained
+
+
+# ── upstream polish: rows coercion, timeout, health resource ────────────
+
+
+def test_classify_rows_coerces_repr_and_json():
+    from theodosia.upstream import MALFORMED, OK, classify_payload
+
+    # sqlite-style Python repr string
+    repr_rows = "[{'region': 'West', 'revenue': 128622.4}]"
+    r = classify_payload("q", repr_rows, expect="rows")
+    assert r.status == OK and r.data == [{"region": "West", "revenue": 128622.4}]
+    # JSON
+    assert classify_payload("q", '[{"a": 1}]', expect="rows").data == [{"a": 1}]
+    # single dict -> one row
+    assert classify_payload("q", {"a": 1}, expect="rows").data == [{"a": 1}]
+    # non-row-shaped
+    assert classify_payload("q", "not rows", expect="rows").status == MALFORMED
+
+
+@pytest.mark.asyncio
+async def test_call_upstream_timeout_raises_structured():
+    from theodosia.upstream import UpstreamError, bind_upstream, call_upstream
+
+    class SlowMgr:
+        async def call(self, server, tool, args):
+            import asyncio
+
+            await asyncio.sleep(5)
+
+    bind_upstream(SlowMgr())
+    with pytest.raises(UpstreamError) as ei:
+        await call_upstream("s", "t", {}, timeout=0.1)
+    assert ei.value.server == "s" and ei.value.body == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_upstreams_resource_reports_health_and_mode():
+    import json
+
+    class FakeMgr:
+        server_names = ("a", "b")
+
+        async def call(self, *a, **k):
+            return None
+
+        async def health(self, *, timeout=10.0):
+            return [
+                {"server": "a", "status": "ok", "tools": ["x"]},
+                {"server": "b", "status": "error", "error": "boom"},
+            ]
+
+    # Shared upstream (a pre-built manager) -> health.
+    server = mount(_build_app(), name="u", upstream=FakeMgr())
+    async with Client(server) as c:
+        out = json.loads((await c.read_resource("theodosia://upstreams"))[0].text)
+        assert out["mode"] == "shared"
+        assert {u["server"]: u["status"] for u in out["upstreams"]} == {"a": "ok", "b": "error"}
+
+    # Per-session config -> names + mode, no ping.
+    server2 = mount(
+        _build_app(),
+        name="u",
+        upstream={"mem": {"command": "x", "env": {"P": "{session}.json"}}},
+    )
+    async with Client(server2) as c:
+        out = json.loads((await c.read_resource("theodosia://upstreams"))[0].text)
+        assert out["mode"] == "per_session" and out["servers"] == ["mem"]
+
+    # No upstream -> none.
+    server3 = mount(_build_app(), name="u")
+    async with Client(server3) as c:
+        out = json.loads((await c.read_resource("theodosia://upstreams"))[0].text)
+        assert out["mode"] == "none"

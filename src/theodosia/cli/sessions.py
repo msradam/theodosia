@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from rich.console import Group
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
@@ -29,6 +30,43 @@ from theodosia.cli._steps import (
     _state_diff_text,
     _status_text,
 )
+
+
+def _session_project_dirs(home: Path, project: str | None) -> list[Path]:
+    """Project subdirs under ``home``, newest first, optionally filtered."""
+    dirs = sorted(
+        (p for p in home.iterdir() if p.is_dir() and not p.name.startswith(".")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return [p for p in dirs if p.name == project] if project else dirs
+
+
+def _sessions_renderable(home: Path, project: str | None, *, limit: int, show_all: bool) -> Group:
+    """Build the session roster as a rich renderable (one table per project)."""
+    payload = _collect_sessions_payload(
+        _session_project_dirs(home, project), limit=limit, show_all=show_all
+    )
+    if not payload:
+        return Group(Text(f"No sessions under {home}", style="dim"))
+    return Group(*(_build_sessions_table(e) for e in payload))
+
+
+def _watch_sessions(
+    home: Path, project: str | None, *, limit: int, show_all: bool, poll_interval: float
+) -> None:
+    """Live-refresh the session roster until Ctrl-C."""
+
+    def render() -> Group:
+        return _sessions_renderable(home, project, limit=limit, show_all=show_all)
+
+    try:
+        with Live(render(), console=console, refresh_per_second=4, screen=False) as view:
+            while True:
+                time.sleep(poll_interval)
+                view.update(render())
+    except KeyboardInterrupt:
+        console.print("[dim](stopped)[/]")
 
 
 def _collect_sessions_payload(
@@ -102,6 +140,13 @@ def sessions_ls(
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit JSON instead of a rich table.")
     ] = False,
+    watch: Annotated[
+        bool,
+        typer.Option("--watch", help="Live-refresh the session roster until Ctrl-C."),
+    ] = False,
+    poll_interval: Annotated[
+        float, typer.Option("--poll", help="Polling interval in seconds when --watch.")
+    ] = 1.0,
 ) -> None:
     """Table of recent tracked sessions, most recent first."""
     home = _locate_project_home(home, project)
@@ -109,30 +154,27 @@ def sessions_ls(
         err_console.print(f"[err]No Burr tracker storage at[/] {home}")
         raise typer.Exit(code=1)
 
-    project_dirs = sorted(
-        (p for p in home.iterdir() if p.is_dir() and not p.name.startswith(".")),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if project:
-        project_dirs = [p for p in project_dirs if p.name == project]
-        if not project_dirs:
-            err_console.print(f"[err]No such project under[/] {home}: {project!r}")
-            raise typer.Exit(code=1)
-
-    payload = _collect_sessions_payload(project_dirs, limit=limit, show_all=show_all)
+    # Unknown-project is a hard error for one-shot modes; under --watch the
+    # project may not exist yet (the session could start while watching).
+    if (
+        project
+        and not watch
+        and not any(p.name == project for p in _session_project_dirs(home, project))
+    ):
+        err_console.print(f"[err]No such project under[/] {home}: {project!r}")
+        raise typer.Exit(code=1)
 
     if as_json:
-        console.print_json(json.dumps(payload))
+        dirs = _session_project_dirs(home, project)
+        console.print_json(
+            json.dumps(_collect_sessions_payload(dirs, limit=limit, show_all=show_all))
+        )
         return
 
-    if not payload:
-        console.print(f"[dim]No projects under {home}[/]")
+    if not watch:
+        console.print(_sessions_renderable(home, project, limit=limit, show_all=show_all))
         return
-
-    for proj_entry in payload:
-        console.print(_build_sessions_table(proj_entry))
-        console.print()
+    _watch_sessions(home, project, limit=limit, show_all=show_all, poll_interval=poll_interval)
 
 
 def sessions_show(

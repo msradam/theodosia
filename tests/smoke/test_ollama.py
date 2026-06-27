@@ -62,9 +62,7 @@ _DEFAULT_PANEL = [
     "phi4-mini:latest",
 ]
 
-_PANEL: list[str] = (
-    [_single] if (_single := os.environ.get("MODEL")) else _DEFAULT_PANEL
-)
+_PANEL: list[str] = [_single] if (_single := os.environ.get("MODEL")) else _DEFAULT_PANEL
 
 
 def _available_models() -> set[str]:

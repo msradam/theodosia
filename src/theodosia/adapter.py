@@ -17,14 +17,21 @@ The mount registers eight resources:
   • ``theodosia://graph``:           static description of the FSM topology
                                 (actions, reads/writes/inputs, edges
                                 with conditions). Read once per session.
+  • ``theodosia://graph/mermaid``:   the FSM as Mermaid stateDiagram source.
+  • ``theodosia://graph/dot``:       the FSM as Graphviz DOT source.
+  • ``theodosia://source/{action}``: an action's Python source.
   • ``theodosia://state``:           current Application state as JSON.
   • ``theodosia://next``:            actions reachable from current state.
   • ``theodosia://history``:         per-session timeline of every action
                                 attempt (successes + refusals).
   • ``theodosia://trace``:           Burr's on-disk LocalTrackingClient log.
+  • ``theodosia://children``:        Burr-native sub-apps spawned/forked from
+                                this session (``children.jsonl``).
+  • ``theodosia://upstreams``:       configured upstream MCP servers + health.
   • ``theodosia://session``:         tracker coordinates (project, app_id,
-                                app_dir, partition_key) for locating
-                                this session's data on disk.
+                                app_dir, partition_key), run progress
+                                (sequence_id, current_action), and
+                                fork/spawn lineage (parent, spawning_parent).
   • ``theodosia://subruns``:         index of sub-Application runs spawned
                                 in this session via ``spawn_subapp``.
   • ``theodosia://subruns/{id}``:    full record for one sub-run.
@@ -65,15 +72,24 @@ if TYPE_CHECKING:
     from theodosia.persona import PersonaSource
 
 import pydantic
-from burr.core import Application
+from burr.core import Application, ApplicationBuilder
 from burr.core.action import Action
 from fastmcp import Context, FastMCP
 from fastmcp.tools.base import ToolResult
 
 from theodosia.upstream import UpstreamManager, bind_upstream, reset_upstream
 
-ApplicationFactory = Callable[[], Application[Any]]
-ApplicationOrFactory = Application[Any] | ApplicationFactory
+# Internal, session-aware factory: ``(session_id) -> Application``. The adapter
+# threads this everywhere a session's Application is (re)built. See _resolve for
+# how a user-supplied factory is normalized into one.
+ApplicationFactory = Callable[[str], Application[Any]]
+# What a caller passes to ``mount``: a built Application (shared across
+# sessions), or a zero-arg callable returning either an Application or an
+# unbuilt ApplicationBuilder. Returning a builder lets Theodosia stamp
+# ``app_id = session_id`` before build, binding Burr's tracking identity to the
+# session key.
+UserFactory = Callable[[], "Application[Any] | ApplicationBuilder[Any]"]
+ApplicationOrFactory = Application[Any] | UserFactory
 
 logger = logging.getLogger("theodosia")
 
@@ -123,6 +139,11 @@ class ServingMode(str, Enum):  # noqa: UP042  # (str, Enum) for stable wire seri
 # Step tool response schema (Pydantic models + JSON Schema): see
 # ``theodosia._step_schema``. Re-exported here for backward compat with
 # any code that grabs the underscored shapes off this module.
+from theodosia._diagram import (  # noqa: E402
+    _render_dot,
+    _render_mermaid,
+    _topology_from_app,
+)
 from theodosia._introspect import (  # noqa: E402,F401 (re-export)
     _INTERNAL_STATE_KEYS,
     _PER_ACTION_TIMEOUT_ATTR,
@@ -141,6 +162,7 @@ from theodosia._step_schema import (  # noqa: E402
 # ``_read_trace`` off this module keeps working.
 from theodosia._tracker import (  # noqa: E402,F401
     _TRACE_MAX_ENTRIES,
+    _children_path,
     _read_trace,
     _tracker_log_path,
     _tracker_project,
@@ -151,6 +173,7 @@ def _restore_snapshot(
     *,
     entry: Any,
     factory: ApplicationFactory,
+    session_id: str,
     state_dict: dict[str, Any],
     last_action: str | None,
     sequence_id_override: int | None = None,
@@ -172,7 +195,7 @@ def _restore_snapshot(
     """
     from burr.core.state import State as _BurrState
 
-    entry.application = factory()
+    entry.application = factory(session_id)
     new_app = entry.application
     assert new_app is not None
 
@@ -452,28 +475,92 @@ async def _run_validator(
     return result
 
 
+def _build_session_app(
+    produced: Application[Any] | ApplicationBuilder[Any],
+    session_id: str,
+    *,
+    suppress_tracker: bool = False,
+) -> Application[Any]:
+    """Realize one session's Application from a factory's return value.
+
+    A built ``Application`` is used as-is (legacy path; identity is whatever
+    the builder froze, so it is not bound to the session). An
+    ``ApplicationBuilder`` is stamped with ``app_id = session_id`` and built,
+    so Burr's tracking dir (``storage_dir/project/<session_id>/``) matches the
+    Theodosia session key and never drifts on reset.
+
+    ``suppress_tracker`` nulls the builder's tracker before building, used for
+    the mount-time introspection template so it doesn't write a phantom
+    ``theodosia-template`` session dir into the user's tracker storage (it
+    would otherwise show up in ``sessions ls``). Real sessions rebuild from a
+    fresh factory call with the tracker intact.
+    """
+    if isinstance(produced, ApplicationBuilder):
+        if suppress_tracker and produced.tracker is not None:
+            # with_tracker registers the tracker in both .tracker and
+            # .lifecycle_adapters (Burr ApplicationBuilder slots; see pyproject
+            # pin); drop it from both by identity so the template build fires no
+            # post_application_create, while preserving any user hooks.
+            produced.lifecycle_adapters = [
+                a for a in produced.lifecycle_adapters if a is not produced.tracker
+            ]
+            produced.tracker = None
+        return produced.with_identifiers(app_id=session_id).build()
+    if isinstance(produced, Application):
+        return produced
+    raise TypeError(
+        f"factory returned {type(produced).__name__}, expected a "
+        f"burr.core.Application or burr.core.ApplicationBuilder"
+    )
+
+
+def _builder_has_local_tracker(builder: ApplicationBuilder[Any]) -> bool:
+    """Whether a builder's tracker is a ``LocalTrackingClient``.
+
+    The builder analogue of ``_has_local_tracker``: needed because the
+    introspection template is built with its tracker suppressed, so the
+    template can't be asked whether real sessions are tracked.
+    """
+    try:
+        from burr.tracking.client import LocalTrackingClient
+    except ImportError:
+        return False
+    return isinstance(getattr(builder, "tracker", None), LocalTrackingClient)
+
+
 def _resolve(
     application: ApplicationOrFactory,
-) -> tuple[Application[Any], ApplicationFactory | None]:
-    """Split ``application`` into a template instance + optional factory.
+) -> tuple[Application[Any], ApplicationFactory | None, bool]:
+    """Split ``application`` into ``(template, factory, sessions_tracked)``.
 
     The template is what mount-time introspection reads to register tools
-    and resources. The factory, if present, is what each session calls to
-    get its own isolated Application.
+    and resources. The factory, if present, is the session-aware
+    ``(session_id) -> Application`` each session calls for its own isolated,
+    identity-bound Application. ``sessions_tracked`` reports whether real
+    sessions carry a ``LocalTrackingClient`` — captured before the template's
+    tracker is suppressed, since fork tooling gates on it.
 
-    Passing an ``Application`` instance returns ``(instance, None)``.
-    Passing a callable returns ``(factory(), factory)``.
+    Passing an ``Application`` instance returns ``(instance, None, ...)``.
+    Passing a callable returns ``(template, session_factory, ...)``: the
+    template is built once with a throwaway id (tracker suppressed so it writes
+    no phantom session dir); ``session_factory`` invokes the user callable
+    afresh per session and binds the id.
     """
     if isinstance(application, Application):
-        return application, None
+        return application, None, _has_local_tracker(application)
     if callable(application):
-        instance = application()
-        if not isinstance(instance, Application):
-            raise TypeError(
-                f"factory {application!r} returned {type(instance).__name__}, "
-                f"expected a burr.core.Application"
-            )
-        return instance, application
+        user_factory = application
+
+        def session_factory(session_id: str) -> Application[Any]:
+            return _build_session_app(user_factory(), session_id)
+
+        produced = user_factory()
+        if isinstance(produced, ApplicationBuilder):
+            tracked = _builder_has_local_tracker(produced)
+        else:
+            tracked = _has_local_tracker(produced)
+        template = _build_session_app(produced, "theodosia-template", suppress_tracker=True)
+        return template, session_factory, tracked
     raise TypeError(
         f"mount() expects a burr.core.Application or a callable returning one, "
         f"got {type(application).__name__}"
@@ -745,6 +832,15 @@ async def _execute_astep(
     kill threads), but the client gets a clean ``ActionTimeoutError``
     refusal. Async bodies stay on the main loop where ctx-injection
     works.
+
+    Sync bodies are driven through ``app.step`` rather than ``app.astep``.
+    Burr's ``_astep`` delegates a sync action to ``_step`` with hooks
+    disabled, then fires ``post_run_step`` from its own ``finally`` with a
+    stale local ``new_state`` (the pre-step state), so the tracker records
+    the wrong state for every sync action and the last step's committed
+    state is never persisted. ``step`` runs the identical ``_step``
+    machinery but logs the correct post-step state. Async bodies are
+    unaffected and stay on ``astep``.
     """
     if os.environ.get("THEODOSIA_VERBOSE"):
         stderr_ctx: contextlib.AbstractContextManager[Any] = contextlib.nullcontext()
@@ -753,15 +849,13 @@ async def _execute_astep(
     fn = getattr(target_action, "fn", None)
     is_sync_body = fn is not None and not inspect.iscoroutinefunction(fn)
     with stderr_ctx:
-        if timeout_seconds is not None and is_sync_body:
-
-            def _thread_runner() -> tuple[Any, Any, Any]:
-                # astep returns None only before the first step; unreachable here.
-                return asyncio.run(app.astep(inputs=inputs))  # type: ignore[return-value]
-
-            return await _race_with_timeout(  # type: ignore[no-any-return]
-                asyncio.to_thread(_thread_runner), timeout_seconds
-            )
+        if is_sync_body:
+            # step is typed Optional; None only occurs before the first step.
+            if timeout_seconds is not None:
+                return await _race_with_timeout(  # type: ignore[no-any-return]
+                    asyncio.to_thread(lambda: app.step(inputs=inputs)), timeout_seconds
+                )
+            return app.step(inputs=inputs)  # type: ignore[return-value]
         if timeout_seconds is not None:
             return await _race_with_timeout(  # type: ignore[no-any-return]
                 app.astep(inputs=inputs), timeout_seconds
@@ -1020,12 +1114,29 @@ def _subruns_index(entry: _SessionEntry) -> list[dict[str, Any]]:
     ]
 
 
+def _pointer_dict(pointer: Any) -> dict[str, Any] | None:
+    """Serialize a Burr ``ParentPointer`` (fork/spawn lineage), or ``None``."""
+    if pointer is None:
+        return None
+    return {
+        "app_id": getattr(pointer, "app_id", None),
+        "partition_key": getattr(pointer, "partition_key", None),
+        "sequence_id": getattr(pointer, "sequence_id", None),
+    }
+
+
 def _session_coordinates(app: Application[Any]) -> dict[str, Any]:
     """Build the ``theodosia://session`` payload: tracker coordinates.
 
     ``project`` and ``app_dir`` are null when no ``LocalTrackingClient``
     is attached; ``app_id`` and ``partition_key`` are always populated
-    because they live on the Application directly.
+    because they live on the Application directly. ``sequence_id`` and
+    ``current_action`` (the action auto-routing would run next) track run
+    progress. ``parent`` / ``spawning_parent`` give *this* mounted app's own
+    fork/spawn ancestry, which is null for a root session (the usual case) and
+    populated only when the mounted Application was itself built with a
+    parent/spawning pointer. To see the descendants a session spawned, read
+    ``theodosia://children`` (the populated direction for a fan-out).
     """
     project: str | None = None
     app_dir: str | None = None
@@ -1041,12 +1152,78 @@ def _session_coordinates(app: Application[Any]) -> dict[str, Any]:
             app_dir = str((storage_dir / app.uid).resolve())
         except (OSError, AttributeError):
             app_dir = None
+    try:
+        next_action = app.get_next_action()
+    except Exception:
+        next_action = None
     return {
         "project": project,
         "app_id": app.uid,
         "app_dir": app_dir,
         "partition_key": getattr(app, "_partition_key", None),
+        "sequence_id": app.sequence_id,
+        "current_action": next_action.name if next_action is not None else None,
+        "parent": _pointer_dict(app.parent_pointer),
+        "spawning_parent": _pointer_dict(app.spawning_parent_pointer),
     }
+
+
+def _source_payload(app: Application[Any], action: str) -> str:
+    """JSON body for ``theodosia://source/{action}``: source, or a typed error."""
+    actions = {a.name: a for a in app.graph.actions}
+    target = actions.get(action)
+    if target is None:
+        return json.dumps(
+            {"error": "unknown_action", "action": action, "known_actions": list(actions)},
+            indent=2,
+        )
+    try:
+        source = target.get_source()
+    except (OSError, TypeError) as exc:
+        return json.dumps(
+            {"error": "source_unavailable", "action": action, "reason": str(exc)}, indent=2
+        )
+    return json.dumps({"action": action, "source": source}, indent=2)
+
+
+def _tracker_file_payload(path: Any, resource_uri: str) -> str:
+    """JSON body for a tracker-file resource (trace/children): error, ``[]``, or records."""
+    if path is None:
+        return json.dumps(
+            {
+                "error": "no_tracker",
+                "message": (
+                    "This Application has no LocalTrackingClient attached. Pass "
+                    "tracker=LocalTrackingClient(project='...') to "
+                    f"ApplicationBuilder.with_tracker(...) to enable {resource_uri}."
+                ),
+            },
+            indent=2,
+        )
+    if not path.exists():
+        return json.dumps([])
+    return json.dumps(_read_trace(path), default=str, indent=2)
+
+
+async def _upstreams_payload(upstream_manager: Any, per_session_config: Any) -> str:
+    """JSON for ``theodosia://upstreams``: configured upstreams + health/mode."""
+    if per_session_config is not None:
+        names = sorted(per_session_config) if isinstance(per_session_config, dict) else []
+        return json.dumps(
+            {
+                "mode": "per_session",
+                "servers": names,
+                "note": "per-session upstreams open a client per MCP session; not pinged here",
+            },
+            indent=2,
+        )
+    if upstream_manager is None:
+        return json.dumps({"mode": "none", "servers": []}, indent=2)
+    health_fn = getattr(upstream_manager, "health", None)
+    if health_fn is None:
+        names = getattr(upstream_manager, "server_names", [])
+        return json.dumps({"mode": "shared", "servers": names}, indent=2)
+    return json.dumps({"mode": "shared", "upstreams": await health_fn()}, indent=2, default=str)
 
 
 def _register_resources(
@@ -1058,6 +1235,8 @@ def _register_resources(
     factory: ApplicationFactory | None,
     graph_summary_json: str,
     graph_summary: dict[str, Any],
+    upstream_manager: Any = None,
+    upstream_per_session_config: Any = None,
 ) -> None:
     """Register the ``theodosia://`` read-only resource surface on ``mcp``."""
 
@@ -1099,6 +1278,40 @@ def _register_resources(
         An unknown tag returns an empty ``actions`` list, not an error.
         """
         return json.dumps(_graph_actions_by_tag(graph_summary, tag), indent=2)
+
+    @mcp.resource("theodosia://graph/mermaid")
+    async def _graph_mermaid_resource() -> str:
+        """The FSM as Mermaid ``stateDiagram-v2`` source (with conditions).
+
+        A renderable view of the same topology ``theodosia://graph`` returns
+        as JSON. Paste into any Mermaid renderer, or let a UI draw the graph
+        without reimplementing the layout. Static; the graph doesn't change
+        after mount.
+        """
+        topo = _topology_from_app(shared_app, graph_summary.get("name", "theodosia"))
+        return _render_mermaid(topo, conditions=True)
+
+    @mcp.resource("theodosia://graph/dot")
+    async def _graph_dot_resource() -> str:
+        """The FSM as Graphviz DOT source (with conditions).
+
+        Same topology as ``theodosia://graph/mermaid``, for Graphviz-based
+        renderers. Static.
+        """
+        topo = _topology_from_app(shared_app, graph_summary.get("name", "theodosia"))
+        return _render_dot(topo, conditions=True)
+
+    @mcp.resource("theodosia://source/{action}")
+    async def _source_resource(action: str) -> str:
+        """Python source of a single action, via Burr's ``Action.get_source()``.
+
+        Lets a client inspect what an action actually does without leaving the
+        session. Returns ``{"action", "source"}`` on success; an
+        ``unknown_action`` error (with the known names) for a bad name; or a
+        ``source_unavailable`` error when the source can't be read (e.g. an
+        action defined in a REPL or a ``lambda``).
+        """
+        return _source_payload(shared_app, action)
 
     @mcp.resource("theodosia://state")
     async def _state_resource(ctx: Context) -> str:
@@ -1202,23 +1415,51 @@ def _register_resources(
         per state transition, full Burr replay shape).
         """
         app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        path = _tracker_log_path(app)
-        if path is None:
-            return json.dumps(
-                {
-                    "error": "no_tracker",
-                    "message": (
-                        "This Application has no LocalTrackingClient attached. "
-                        "Pass tracker=LocalTrackingClient(project='...') to "
-                        "ApplicationBuilder.with_tracker(...) when building "
-                        "the Application to enable theodosia://trace."
-                    ),
-                },
-                indent=2,
-            )
-        if not path.exists():
-            return json.dumps([])
-        return json.dumps(_read_trace(path), default=str, indent=2)
+        return _tracker_file_payload(_tracker_log_path(app), "theodosia://trace")
+
+    @mcp.resource("theodosia://children")
+    async def _children_resource(ctx: Context) -> str:
+        """Burr-native sub-applications spawned or forked from this session.
+
+        When an action spawns a sub-Application via Burr's
+        ``with_spawning_parent`` (or forks one), Burr appends a record to
+        ``children.jsonl`` in this session's tracker dir. This surfaces those
+        native children: each entry carries the child ``app_id``, an
+        ``event_type`` (Burr emits ``spawn_start`` for a spawn, ``fork`` for a
+        fork), the parent ``sequence_id`` at which the link was made, and
+        ``event_time``.
+
+        This is distinct from ``theodosia://subruns``, which indexes sub-runs
+        started through Theodosia's own ``spawn_subapp`` helper. Use this one
+        to follow children created by Burr directly inside your action code.
+
+        Native children resolve only when the child's tracker shares this
+        app's ``storage_dir`` and project: Burr writes the link to
+        ``<child storage_dir>/<parent app_id>/children.jsonl``. A child built
+        with a different ``tracker()`` project writes its link elsewhere and
+        won't appear here.
+
+        Returns ``{"error": "no_tracker", ...}`` when no LocalTrackingClient
+        is attached, and ``[]`` when nothing has been spawned yet.
+        """
+        app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
+        return _tracker_file_payload(_children_path(app), "theodosia://children")
+
+    @mcp.resource("theodosia://upstreams")
+    async def _upstreams_resource() -> str:
+        """Configured upstream MCP servers this FSM drives, and their health.
+
+        These are the servers reachable from action bodies via
+        ``call_upstream`` (the agent never sees their tools directly). For
+        shared upstreams, each is pinged (opened, tools listed) so a
+        misconfigured server surfaces here rather than mid-run as an action
+        failure: ``{server, status: "ok"|"error", tools | error}``. For
+        per-session upstreams (config carrying a ``{session}`` placeholder)
+        only the configured names and mode are returned, since pinging would
+        spawn a session-scoped client. ``{"mode": "none"}`` when no upstream
+        is configured.
+        """
+        return await _upstreams_payload(upstream_manager, upstream_per_session_config)
 
     @mcp.resource("theodosia://session")
     async def _session_resource(ctx: Context) -> str:
@@ -1527,6 +1768,32 @@ def _coerce_inputs_arg(inputs: dict[str, Any] | str | None) -> dict[str, Any] | 
     return parsed if isinstance(parsed, dict) else None
 
 
+async def _resolve_session_upstream(
+    store: _SessionStore,
+    shared_manager: Any,
+    per_session_config: Any,
+    entry: Any,
+    session_id: str,
+) -> Any:
+    """The upstream manager to bind for one step.
+
+    Shared mode: the one ``shared_manager``. Per-session mode (config carries a
+    ``{session}`` placeholder): the entry's own manager, built lazily from the
+    placeholder-substituted config so each session gets an isolated
+    client/subprocess/state file. Also closes managers left by evicted sessions.
+    """
+    for stale in store.take_closables():
+        with contextlib.suppress(Exception):
+            await stale.aclose()
+    if per_session_config is None or entry is None:
+        return shared_manager
+    if entry.upstream is None:
+        from theodosia.upstream import substitute_session
+
+        entry.upstream = UpstreamManager(substitute_session(per_session_config, session_id))
+    return entry.upstream
+
+
 def _register_step_tool(
     mcp: FastMCP,
     *,
@@ -1537,6 +1804,7 @@ def _register_step_tool(
     action_timeout_seconds: float | None,
     input_validators: dict[str, Callable[..., Any]] | None,
     upstream_manager: Any,
+    upstream_per_session_config: Any = None,
     external_tools_map: dict[str, list[str]],
     next_hint: Callable[..., str | None] | None,
     action_surface: str,
@@ -1592,7 +1860,14 @@ def _register_step_tool(
         effective_validator = _action_validator(action_map[action], input_validators)
         token = _current_session_entry.set(entry)
         ctx_token = _current_fastmcp_context.set(ctx)
-        upstream_token = bind_upstream(upstream_manager) if upstream_manager else None
+        session_manager = await _resolve_session_upstream(
+            store,
+            upstream_manager,
+            upstream_per_session_config,
+            entry,
+            ctx.session_id if ctx else "",
+        )
+        upstream_token = bind_upstream(session_manager) if session_manager else None
         subruns_before = set(entry.subruns) if entry is not None else set()
         try:
             async with lock:
@@ -1735,7 +2010,7 @@ def _register_reset_tool(
                 if entry.application is not None
                 else {}
             )
-            entry.application = factory()
+            entry.application = factory(ctx.session_id)
             entry.subruns.clear()
             new_app = entry.application
             assert new_app is not None
@@ -1925,6 +2200,7 @@ def _register_fork_at_tool(
             new_app, new_state, valid_next = _restore_snapshot(
                 entry=entry,
                 factory=factory,
+                session_id=ctx.session_id,
                 state_dict=saved_state,
                 last_action=target_action,
                 sequence_id_override=sequence_id,
@@ -2018,13 +2294,19 @@ async def _load_past_state_via_loader(
     return loaded["state"].get_all(), loaded.get("position"), None
 
 
-def _load_past_state_via_tracker(
+async def _load_past_state_via_tracker(
     application: Application[Any] | None,
     *,
+    partition_key: str,
     app_id: str,
     sequence_id: int,
 ) -> tuple[dict[str, Any] | None, str | None, ToolResult | None]:
-    """Tier 2 of ``fork_from_past``: the Application's LocalTrackingClient."""
+    """Tier 2 of ``fork_from_past``: the Application's LocalTrackingClient.
+
+    The tracker is itself a Burr ``BaseStateLoader``, so load through the
+    supported ``.load()`` API (the same path as Tier 1), not the deprecated
+    ``LocalTrackingClient.load_state`` static.
+    """
     try:
         from burr.tracking.client import LocalTrackingClient
     except ImportError:
@@ -2045,29 +2327,9 @@ def _load_past_state_via_tracker(
             "fork_from_past × no_tracker",
         )
         return None, None, refusal
-    try:
-        import warnings
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            loaded_state_dict, last_action = LocalTrackingClient.load_state(
-                project=tracker.project_id,
-                app_id=app_id,
-                sequence_id=sequence_id,
-                storage_dir=tracker.raw_storage_dir,
-            )
-    except (ValueError, FileNotFoundError, OSError) as exc:
-        refusal = _step_tool_result(
-            {
-                "error": "unknown_past_run",
-                "reason": str(exc),
-                "app_id": app_id,
-                "sequence_id": sequence_id,
-            },
-            f"fork_from_past × unknown_past_run ({app_id})",
-        )
-        return None, None, refusal
-    return loaded_state_dict, last_action, None
+    return await _load_past_state_via_loader(
+        tracker, partition_key=partition_key, app_id=app_id, sequence_id=sequence_id
+    )
 
 
 def _register_fork_from_past_tool(
@@ -2174,8 +2436,11 @@ def _register_fork_from_past_tool(
                     sequence_id=sequence_id,
                 )
             else:
-                loaded_state_dict, last_action, refusal = _load_past_state_via_tracker(
-                    entry.application, app_id=app_id, sequence_id=sequence_id
+                loaded_state_dict, last_action, refusal = await _load_past_state_via_tracker(
+                    entry.application,
+                    partition_key=partition_key,
+                    app_id=app_id,
+                    sequence_id=sequence_id,
                 )
             if refusal is not None:
                 return refusal
@@ -2187,6 +2452,7 @@ def _register_fork_from_past_tool(
             new_app, new_state, valid_next = _restore_snapshot(
                 entry=entry,
                 factory=factory,
+                session_id=ctx.session_id,
                 state_dict=loaded_state_dict,
                 last_action=last_action,
             )
@@ -2249,8 +2515,8 @@ def _wrap_with_hooks(
     if factory is not None:
         original_factory = factory
 
-        def factory_with_hooks() -> Application[Any]:
-            app_inst = original_factory()
+        def factory_with_hooks(session_id: str) -> Application[Any]:
+            app_inst = original_factory(session_id)
             _attach_hooks(app_inst, hooks)
             return app_inst
 
@@ -2261,7 +2527,7 @@ def _wrap_with_hooks(
 
 
 def _resolve_upstream_manager(upstream: dict[str, Any] | None) -> Any:
-    """Accept an upstream config dict or a pre-built manager.
+    """Accept an upstream config dict or a pre-built manager (shared mode).
 
     A config dict is the common case; ``UpstreamManager`` opens real client
     sessions for it. Anything with an async ``call`` attribute is treated
@@ -2273,6 +2539,22 @@ def _resolve_upstream_manager(upstream: dict[str, Any] | None) -> Any:
     if hasattr(upstream, "call"):
         return upstream
     return UpstreamManager(upstream)
+
+
+def _resolve_upstream(upstream: Any) -> tuple[Any, Any]:
+    """Split an upstream config into ``(shared_manager, per_session_config)``.
+
+    A config dict that contains a ``{session}`` placeholder runs in per-session
+    isolation mode: no shared manager, and each session lazily builds its own
+    manager from the placeholder-substituted config (its own client /
+    subprocess / state file). Everything else (a plain dict, a pre-built
+    manager) runs in shared mode: one manager for all sessions.
+    """
+    from theodosia.upstream import _config_is_per_session
+
+    if isinstance(upstream, dict) and _config_is_per_session(upstream):
+        return None, upstream
+    return _resolve_upstream_manager(upstream), None
 
 
 # COMPLEXITY: CC 14 from optional-feature wiring (hooks, personas, upstream,
@@ -2301,11 +2583,18 @@ def mount(
     """Return a FastMCP server that exposes ``application`` per ``mode``.
 
     Args:
-        application: Either a built ``burr.core.Application`` (shared
-            across all sessions) or a callable ``() -> Application``
-            (called once per session for state isolation). The graph
-            shape is read once at mount time, so factories should
-            return Applications with the same graph each call.
+        application: One of three forms. A built ``burr.core.Application``
+            (shared across all sessions). A callable ``() -> Application``
+            (called once per session for state isolation). Or a callable
+            ``() -> ApplicationBuilder`` (an unbuilt builder): Theodosia
+            stamps ``app_id = session_id`` via ``with_identifiers`` and
+            builds it, binding Burr's tracking dir
+            (``storage_dir/project/<session_id>/``) to the session key so
+            the id never drifts on reset. Prefer the builder form when you
+            use Burr tracking; do not set your own ``app_id`` on it (use
+            ``partition_key`` for your own grouping). The graph shape is
+            read once at mount time, so factories should return the same
+            graph each call.
         mode: ``ServingMode.STEP`` (the only supported value).
         name: MCP server name; defaults to ``"theodosia"``.
         instructions: Server-level instructions surfaced via the MCP
@@ -2398,6 +2687,17 @@ def mount(
             from a graph, and it works with any compliant server because
             ``fastmcp.Client`` speaks every transport. Sessions open
             lazily on first use and stay open for the server's lifetime.
+
+            Per-session isolation: by default one upstream client/subprocess
+            is shared across all MCP sessions, which is correct and cheaper
+            for stateless upstreams (filesystem reads, fetch). For a *stateful*
+            upstream (a memory server, a per-tenant database), put a
+            ``{session}`` placeholder anywhere in that server's config and each
+            session gets its own client built from the substituted config, so
+            their state never collides. For example
+            ``{"env": {"MEMORY_FILE_PATH": "/data/{session}.json"}}`` gives
+            every session a private memory file. Per-session clients are closed
+            when their session is evicted.
         hooks: Optional list of Burr ``LifecycleAdapter`` instances
             (``PreRunStepHook``, ``PostRunStepHook``, ``PreStartStreamHook``,
             ``DoLogAttributeHook``, etc.). Attached to every session's
@@ -2439,7 +2739,7 @@ def mount(
         )
 
     _silence_fastmcp_loggers()
-    shared_app, factory = _resolve(application)
+    shared_app, factory, sessions_tracked = _resolve(application)
     if factory is None:
         _warn_shared_app_mode()
 
@@ -2464,7 +2764,7 @@ def mount(
     # name exists in the graph; warn (don't fail) on unknowns so a typo
     # doesn't take the server down.
     external_tools_map = _normalize_external_tools(external_tools, shared_app)
-    upstream_manager = _resolve_upstream_manager(upstream)
+    upstream_manager, upstream_per_session_config = _resolve_upstream(upstream)
     # Static graph summary, computed once. Sub-runs may have their own
     # graphs but this resource describes the top-level one.
     graph_summary = _compute_graph_summary(shared_app, server_name, external_tools_map)
@@ -2538,6 +2838,8 @@ def mount(
         factory=factory,
         graph_summary_json=graph_summary_json,
         graph_summary=graph_summary,
+        upstream_manager=upstream_manager,
+        upstream_per_session_config=upstream_per_session_config,
     )
     _register_personas(
         mcp, personas_map=personas_map, persona=persona, store=store, factory=factory
@@ -2554,6 +2856,7 @@ def mount(
         action_timeout_seconds=action_timeout_seconds,
         input_validators=input_validators,
         upstream_manager=upstream_manager,
+        upstream_per_session_config=upstream_per_session_config,
         external_tools_map=external_tools_map,
         next_hint=next_hint,
         action_surface=action_surface,
@@ -2569,7 +2872,9 @@ def mount(
     mcp.add_transform(ResourcesAsTools(mcp))
 
     # Without a tracker or loader, fork_from_past can only refuse.
-    if state_loader is None and not _has_local_tracker(shared_app):
+    # ``sessions_tracked`` (not the tracker-suppressed template) reports
+    # whether real sessions carry a LocalTrackingClient.
+    if state_loader is None and not sessions_tracked:
         mcp.add_transform(Visibility(False, names={"fork_from_past"}))
 
     return mcp

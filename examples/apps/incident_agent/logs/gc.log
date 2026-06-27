@@ -1,0 +1,7 @@
+2026-06-26T09:05:00Z [GC pause young] 318M->210M(2048M) 18ms
+2026-06-26T10:05:00Z [GC pause young] 742M->600M(2048M) 41ms
+2026-06-26T10:35:00Z [Full GC] 1063M->980M(2048M) 210ms note=young collections no longer reclaiming
+2026-06-26T11:05:00Z [Full GC] 1488M->1455M(2048M) 640ms note=live set climbing, reclaim shrinking
+2026-06-26T11:35:00Z [Full GC] 1907M->1902M(2048M) 1180ms note=heap effectively full after full GC
+2026-06-26T11:49:50Z [Full GC] 2034M->2030M(2048M) 1900ms note=allocation failure imminent
+2026-06-26T11:50:01Z [GC concurrent-mark-abort] heap exhausted, promotion failed

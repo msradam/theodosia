@@ -65,6 +65,19 @@ def test_classify_plain_string_is_malformed() -> None:
     assert r.status == MALFORMED
 
 
+def test_classify_text_mode_accepts_prose_mentioning_error() -> None:
+    # A prose-returning upstream (fetch/read_file) must not be flagged ERROR
+    # just because the content mentions "error"/"failure".
+    prose = "HTTP 500 errors indicate server failure; exceptions get logged."
+    assert classify_payload("x", prose, expect="text").status == OK
+    # Default 'any' mode keeps the structured-upstream heuristic.
+    assert classify_payload("x", prose).status == ERROR
+
+
+def test_classify_text_mode_empty_is_error() -> None:
+    assert classify_payload("x", "   ", expect="text").status == ERROR
+
+
 def test_classify_dict_with_error_key_is_error() -> None:
     r = classify_payload("x", {"error": "Grafana 500"})
     assert r.status == ERROR

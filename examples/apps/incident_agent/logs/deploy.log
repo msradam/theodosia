@@ -1,0 +1,5 @@
+2026-06-25T16:40:00Z deploy build=2026.06.25-r3 checkout-svc result=ok rss_steady_mb=initial 320 stable_24h=yes
+2026-06-26T08:55:00Z deploy build=2026.06.26-r4 checkout-svc result=ok changelog="add CartCache for hot product lookups (PR #4127)"
+2026-06-26T08:55:01Z deploy note PR #4127 introduces com.shop.cart.CartCache backed by an unbounded ConcurrentHashMap, no TTL, no max-size
+2026-06-26T08:55:02Z deploy config heap=-Xmx2048m unchanged from r3
+2026-06-26T11:52:00Z deploy note auto-rollback NOT triggered: liveness probe passes after oom restart, error budget alert pending

@@ -8,6 +8,66 @@ versioning.
 
 _Nothing yet._
 
+## [0.7.0] - 2026-06-27
+
+Identity binding, durable-resume fidelity, a wider introspection surface, and
+production-grade upstream MCP support. Additive throughout; no breaking changes.
+
+### Added
+
+- **Builder-seam factory.** `mount()` (and `theodosia serve` / `doctor`) now
+  accept a callable returning an unbuilt `ApplicationBuilder`. Theodosia stamps
+  `app_id = session_id` via `with_identifiers` before build, so Burr's tracking
+  dir is bound to the session key and no longer drifts on reset. The existing
+  `() -> Application` form is unchanged.
+- **`theodosia://graph/mermaid`** and **`theodosia://graph/dot`** — the FSM as
+  renderable diagram source.
+- **`theodosia://source/{action}`** — an action's Python source via
+  `Action.get_source()`.
+- **`theodosia://children`** — Burr-native sub-applications spawned/forked from
+  this session (`children.jsonl`).
+- **`theodosia://upstreams`** — configured upstream MCP servers and their
+  health (each pinged for its tool list).
+- `theodosia://session` now also reports `sequence_id`, `current_action`, and
+  fork/spawn lineage (`parent`, `spawning_parent`).
+- **Per-session upstream isolation.** A `{session}` placeholder anywhere in an
+  upstream config gives each MCP session its own client/subprocess built from
+  the substituted config (e.g. `{"env": {"MEMORY_FILE_PATH": "/d/{session}.json"}}`),
+  so stateful upstreams no longer collide across sessions. Stateless upstreams
+  omit the placeholder and share one client.
+- **Per-call upstream timeout** via `call_upstream(..., timeout=)` /
+  `safe_upstream(..., timeout=)`, surfaced as a structured `UpstreamError` on
+  expiry.
+- **`classify_payload`/`safe_upstream(expect="rows")`** coerces tabular upstream
+  output (JSON or Python-`repr` string) into rows; `expect="text"` accepts prose
+  upstreams (fetch, `read_file`) without misclassifying them.
+- `theodosia sessions ls --watch` — live-refreshing session roster.
+
+### Changed
+
+- **Trace/resume fidelity fix.** Synchronous actions are now driven through
+  `app.step` rather than `app.astep`: Burr's async path logs the pre-step state
+  for a sync action, so `theodosia://trace`, `fork_from_past`, and any persister
+  lagged one step. The tracker now records the correct post-step state.
+- `fork_from_past` loads through the supported `BaseStateLoader.load()` instead
+  of the deprecated `LocalTrackingClient.load_state`.
+- `theodosia serve <module>:build_server` now runs an already-mounted `FastMCP`
+  as-is, so an FSM that owns a mount-level `upstream` config serves correctly.
+
+### Fixed
+
+- The mount-time introspection template no longer writes a phantom
+  `theodosia-template` session dir into a tracked builder's storage (it would
+  show up in `sessions ls`).
+
+### Examples
+
+- New worked FSMs: `git_agent`, `diagnostic_fsm` (branching + dead-end
+  recovery), `deploy_approval` (typed inputs + escalation gates),
+  `fanout_research` (native sub-app spawning), and four upstream-driven apps
+  under `examples/apps/` (review, incident, research, data) plus a Strands
+  integration under `examples/integrations/`.
+
 ## [0.6.0] - 2026-06-22
 
 Action schemas in server instructions, correct MCP error semantics, and

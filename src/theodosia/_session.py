@@ -18,7 +18,10 @@ from typing import Any
 
 from burr.core import Application
 
-ApplicationFactory = Callable[[], Application[Any]]
+# Session-aware: receives the session id so the adapter can stamp it as the
+# Burr ``app_id`` (``with_identifiers``) before build, binding Burr's tracking
+# identity to the Theodosia session key. See ``adapter._resolve``.
+ApplicationFactory = Callable[[str], Application[Any]]
 
 _DEFAULT_SESSION_TTL_SECONDS = 3600  # 1 hour idle
 _DEFAULT_MAX_SESSIONS = 100
@@ -54,6 +57,13 @@ class _SessionEntry:
     subruns: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_access: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Per-session upstream manager (only in per-session isolation mode, i.e.
+    # the mount upstream config contains a ``{session}`` placeholder). Lazily
+    # built on first upstream call; closed when the session is evicted.
+    # ``reset_session`` keeps it (same session id -> same substituted config ->
+    # the open client is correctly reused). ``None`` in shared-upstream mode
+    # (one manager serves all sessions).
+    upstream: Any | None = None
 
 
 class _SessionStore:
@@ -78,6 +88,19 @@ class _SessionStore:
         self._entries: dict[str, _SessionEntry] = {}
         self.ttl_seconds = ttl_seconds
         self.max_sessions = max_sessions
+        # Per-session upstream managers from evicted entries, awaiting an async
+        # close. Eviction is sync; the async step path drains this.
+        self._closables: list[Any] = []
+
+    def _drop(self, sid: str) -> None:
+        entry = self._entries.pop(sid)
+        if entry.upstream is not None:
+            self._closables.append(entry.upstream)
+
+    def take_closables(self) -> list[Any]:
+        """Return and clear upstream managers from evicted sessions to close."""
+        pending, self._closables = self._closables, []
+        return pending
 
     def _evict_stale(self) -> None:
         if self.ttl_seconds is None:
@@ -85,14 +108,14 @@ class _SessionStore:
         now = time.monotonic()
         stale = [sid for sid, e in self._entries.items() if now - e.last_access > self.ttl_seconds]
         for sid in stale:
-            del self._entries[sid]
+            self._drop(sid)
 
     def _evict_if_full(self) -> None:
         if self.max_sessions is None:
             return
         while len(self._entries) >= self.max_sessions:
             oldest = min(self._entries, key=lambda s: self._entries[s].last_access)
-            del self._entries[oldest]
+            self._drop(oldest)
 
     def get_or_create(
         self,
@@ -103,7 +126,7 @@ class _SessionStore:
         entry = self._entries.get(sid)
         if entry is None:
             self._evict_if_full()
-            app = factory() if factory is not None else None
+            app = factory(sid) if factory is not None else None
             entry = _SessionEntry(application=app)
             self._entries[sid] = entry
         entry.last_access = time.monotonic()

@@ -40,15 +40,15 @@ def _tracker_project(app: Application[Any]) -> str | None:
     return tracker.project_id
 
 
-def _tracker_log_path(app: Application[Any]) -> Path | None:
-    """Locate the on-disk log file for this Application's Burr tracker.
+def _tracker_file(app: Application[Any], filename: str) -> Path | None:
+    """Locate a file in this Application's Burr tracker dir, safely.
 
     Reads ``app._tracker`` which is Burr's internal slot for the
     ``LocalTrackingClient``. We pin Burr to a minor version range
     because of this and similar internals (see ``pyproject.toml``).
     Returns ``None`` when the Application has no tracker, or has a
-    non-local one, or the resolved path is outside the tracker's
-    own storage directory.
+    non-local one, or the resolved path escapes the tracker's own
+    storage directory.
     """
     try:
         from burr.tracking.client import LocalTrackingClient
@@ -59,17 +59,40 @@ def _tracker_log_path(app: Application[Any]) -> Path | None:
         return None
     try:
         storage_dir = Path(tracker.storage_dir).expanduser().resolve()
-        log_path = (storage_dir / app.uid / LocalTrackingClient.LOG_FILENAME).resolve()
+        path = (storage_dir / app.uid / filename).resolve()
     except (OSError, AttributeError):
         return None
-    # Defence in depth: the computed log path must sit under the tracker's
+    # Defence in depth: the computed path must sit under the tracker's
     # storage dir. If app.uid contained a traversal sequence (it shouldn't,
     # Burr generates UUIDs, but belt-and-braces), refuse to read it.
     try:
-        log_path.relative_to(storage_dir)
+        path.relative_to(storage_dir)
     except ValueError:
         return None
-    return log_path
+    return path
+
+
+def _tracker_log_path(app: Application[Any]) -> Path | None:
+    """Locate the on-disk action-step log for this Application's tracker."""
+    try:
+        from burr.tracking.client import LocalTrackingClient
+    except ImportError:
+        return None
+    return _tracker_file(app, LocalTrackingClient.LOG_FILENAME)
+
+
+def _children_path(app: Application[Any]) -> Path | None:
+    """Locate the ``children.jsonl`` Burr writes for spawned/forked sub-apps.
+
+    Burr appends one record per ``with_spawning_parent`` / fork link into
+    the *parent* app's dir, so this surfaces native sub-applications a user
+    spawns inside an action, independent of Theodosia's own ``spawn_subapp``.
+    """
+    try:
+        from burr.tracking.client import LocalTrackingClient
+    except ImportError:
+        return None
+    return _tracker_file(app, LocalTrackingClient.CHILDREN_FILENAME)
 
 
 def _read_trace(path: Path, *, tail: int = _TRACE_MAX_ENTRIES) -> list[dict[str, Any]]:
