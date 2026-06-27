@@ -94,11 +94,11 @@ A client that calls `pay` before `take_order` gets a structured refusal it can r
 
 ## Primitives
 
-- **`mount(application, *, hooks=[...], middleware=[...], upstream=..., personas=...)`** wraps a Burr `Application` (or factory) as a FastMCP server. Returns the server; call `.run()` or pass to FastMCP's in-memory `Client`. Optional kwargs forward Burr `LifecycleAdapter`, FastMCP `Middleware`, upstream MCP clients, and `PERSONA.md` identity layers.
+- **`mount(application, *, hooks=[...], middleware=[...], upstream=..., personas=...)`** wraps a Burr `Application` (or factory) as a FastMCP server. Returns the server; call `.run()` or pass to FastMCP's in-memory `Client`. Optional kwargs forward Burr `LifecycleAdapter`, FastMCP `Middleware`, upstream MCP clients, and `PERSONA.md` identity layers. A factory may return an unbuilt `ApplicationBuilder`; Theodosia then stamps `app_id = session_id`, so the Burr tracking dir is bound to the session and never drifts on reset.
 - **The four MCP tools** every mounted server exposes: `step(action, inputs)`, `reset_session`, `fork_at(sequence_id)`, `fork_from_past(app_id, sequence_id)`. The action namespace lives in `step`'s argument schema; FSM complexity changes the schema, not the tool count. FastMCP's `ResourcesAsTools` transform adds `list_resources` and `read_resource` for clients that lack native `resources/read`.
 - **Structured refusals** from `step`: `invalid_transition`, `unknown_action`, `validation_failed`, `action_timeout`, `action_error`. Every refusal carries `valid_next_actions`. `fork_at` / `fork_from_past` return their own `error` codes on the same wire shape.
-- **`theodosia://` resources** for inspection: `graph`, `state`, `next`, `history`, `subruns`, `trace`, `session`.
-- **`upstream`** lets a Burr action body call tools on other MCP servers through `call_upstream(server, tool, args)`. The agent driving Theodosia never sees those servers; it only sees `step`.
+- **`theodosia://` resources** for inspection: `graph` (plus `graph/mermaid`, `graph/dot`, and `source/{action}`), `state`, `next`, `history`, `subruns`, `trace`, `children`, `upstreams`, and `session` (tracker coordinates, run progress, and fork/spawn lineage).
+- **`upstream`** lets a Burr action body call tools on other MCP servers through `call_upstream(server, tool, args)`. The agent driving Theodosia never sees those servers; it only sees `step`. A `{session}` placeholder in an upstream's config isolates stateful upstreams per session.
 
 Full reference (Persona, Assembly, hooks, middleware, tracker, `drive_claude`) lives in the [docs](https://msradam.github.io/theodosia/).
 
@@ -168,7 +168,7 @@ Full docs at **[msradam.github.io/theodosia](https://msradam.github.io/theodosia
 
 ## Examples and tests
 
-[`examples/`](examples/) ships self-contained FSMs covering pure-FSM, typed state, hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM, upstream, and multi-graph. Each runs with `uv run python examples/<file>.py`. The test suite runs with `uv run pytest`.
+[`examples/`](examples/) ships self-contained FSMs covering pure-FSM, typed state, hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM, upstream, and multi-graph, plus branching (`diagnostic_fsm`), typed-input escalation (`deploy_approval`), and native sub-app spawning (`fanout_research`). [`examples/apps/`](examples/apps/) holds production-shaped agents that drive a real upstream MCP server (code review, incident response, research, data analysis), and [`examples/integrations/`](examples/integrations/) shows a Theodosia FSM mounted as one tool in a Strands agent. Each FSM runs with `uv run python examples/<file>.py`. The test suite runs with `uv run pytest`.
 
 ## Related projects
 

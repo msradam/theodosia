@@ -80,6 +80,7 @@ process.
 ```bash
 theodosia status                      # one-shot snapshot of tracker + recent projects
 theodosia sessions ls                 # recent sessions, most recent first
+theodosia sessions ls --watch         # live-refresh the roster (--poll <seconds>)
 theodosia sessions show <app-id>      # full timeline: per-step state diff + timing; prints Burr UI URL
 theodosia sessions show <app-id> --open  # also open the Burr UI replay in the default browser
 theodosia sessions diff <a> <b>       # cross-session: action path divergence + final-state diff

@@ -58,6 +58,84 @@ For tests or harness embeddings, `bind_upstream` accepts any object with an asyn
 `call(server, tool, args)` method, so you can bind an already-open session
 instead of the built-in manager.
 
+## Per-session isolation
+
+By default one shared client serves every MCP session. That is correct and
+cheaper for stateless upstreams (filesystem reads, fetch). A stateful upstream (a
+memory server, a per-tenant database) needs its own client per session so two
+agents do not collide in one backend.
+
+Put a `{session}` placeholder anywhere in an upstream's config and Theodosia
+switches that server to per-session mode: it substitutes the FastMCP session id
+into the placeholder and builds a separate client or subprocess per session.
+
+```python
+mount(
+    build_application,
+    upstream={
+        "mem": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-memory"],
+            "env": {"MEMORY_FILE_PATH": "/data/{session}.json"},
+        },
+    },
+)
+```
+
+Each session gets its own memory file, so its state does not leak into another
+session's. Per-session clients are closed when the session is evicted.
+`theodosia://upstreams` reports `{"mode": "per_session", "servers": [...]}` for
+this configuration and does not ping the servers (pinging would spawn a client).
+
+## Per-call timeout
+
+`call_upstream` and `safe_upstream` take a `timeout` (seconds) that bounds one
+call independently of the step-level `action_timeout_seconds`:
+
+```python
+rows = await call_upstream("db", "query", {"sql": "..."}, timeout=5)
+```
+
+On expiry a structured `UpstreamError(server, tool, body="timeout")` is raised,
+so a slow or hung upstream fails fast instead of stalling the whole step. Through
+`safe_upstream` the same expiry surfaces as a classified `ERROR` result.
+
+## Classifying results
+
+`safe_upstream` calls an upstream and returns a classified `SourceResult` without
+ever raising; `classify_payload` does the classification on a payload you already
+have. The `expect` argument tunes what counts as usable:
+
+- `expect="any"` (default): for structured (JSON) upstreams. A bare string is
+  treated as unstructured, or as an error if it reads like one.
+- `expect="rows"`: for tabular upstreams. Coerces output that arrives as JSON, a
+  single dict, or a Python `repr` string (many DB/MCP servers return rows as a
+  `repr`, not JSON) into a list of rows. Parsing uses `ast.literal_eval`, so it
+  cannot execute upstream code.
+- `expect="text"`: for prose-returning upstreams (a fetch server, a filesystem
+  `read_file`). A non-empty string is `OK`. Use this so a page that merely
+  mentions the word "error" is not misclassified as a failure, which the default
+  `any` mode would do.
+
+```python
+rows = await safe_upstream("db", "db", "query", {"sql": "..."}, expect="rows")
+page = await safe_upstream("web", "fetch", "get", {"url": url}, expect="text")
+```
+
+## Serving an FSM that mounts upstream
+
+If your module builds the server itself, for example a `build_server()` that
+calls `mount(..., upstream={...})` and returns the FastMCP, point `theodosia
+serve` at that function:
+
+```bash
+theodosia serve mymodule:build_server
+```
+
+`serve` runs an already-mounted FastMCP (or a callable returning one) as-is
+rather than trying to re-mount it, so a server that owns its upstream config
+serves correctly.
+
 ## Example
 
 `examples/upstream_filesystem.py` is a code-audit FSM that drives the official

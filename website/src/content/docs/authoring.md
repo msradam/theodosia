@@ -73,6 +73,32 @@ theodosia doctor incident:build_application   # validate before serving
 `resolve` cannot be called until `verify` has run and set `verified=True`. That
 is the whole point: the gate lives in the graph, not in a prompt.
 
+## Return the builder, not a built Application
+
+The factory above ends in `.build()` and returns an `Application`. You can
+instead drop `.build()` and return the unbuilt `ApplicationBuilder`:
+
+```python
+def build_application():
+    return (
+        ApplicationBuilder()
+        .with_actions(acknowledge=acknowledge, verify=verify, resolve=resolve, escalate=escalate)
+        .with_transitions(...)
+        .with_tracker(tracker(project="incident"))
+        .with_entrypoint("acknowledge")   # no .build()
+    )
+```
+
+When the factory returns a builder, Theodosia calls
+`builder.with_identifiers(app_id=session_id).build()` for you, so the Burr
+`app_id` equals the MCP session id and the tracker directory
+(`storage_dir/project/<session_id>/`) is bound to that session. It stays bound
+across `reset_session`, since the rebuild stamps the same id. This is the
+recommended form when you wire Burr tracking; without it Burr generates a fresh
+`app_id` on every build and the on-disk session id drifts from the live MCP
+session. `mount`, `theodosia serve`, and `theodosia doctor` all accept the
+builder form, the `() -> Application` form, and a bare `Application`.
+
 ## Trap 1: two unconditional exits from one action
 
 Burr allows only one *default* (conditionless) transition per source action. If

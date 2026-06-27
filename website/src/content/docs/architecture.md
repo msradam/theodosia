@@ -4,8 +4,8 @@ description: 'How mount() turns a Burr Application into an MCP server.'
 ---
 
 `mount()` wraps a Burr `Application` in a FastMCP server, registers four MCP
-tools (`step`, `reset_session`, `fork_at`, `fork_from_past`), and exposes eight
-`theodosia://` resources for the agent.
+tools (`step`, `reset_session`, `fork_at`, `fork_from_past`), and exposes the
+`theodosia://` resource family for the agent.
 
 ## Graph topology
 
@@ -84,11 +84,35 @@ from a single error.
 
 ## Per-session isolation
 
-`mount(...)` accepts either an `Application` instance (shared state across all
+`mount(...)` accepts an `Application` instance (shared state across all
 sessions) or a callable factory (one Application per MCP session). The session
 store is a plain dict keyed by `ctx.session_id`, held in `mount`'s closure
 scope. Each entry holds the Application built lazily on first touch, a
 per-session `asyncio.Lock`, and the history and subrun records.
+
+### The builder seam
+
+A factory can return either a built `Application` or an *unbuilt*
+`burr.core.ApplicationBuilder`. When it returns a builder, Theodosia calls
+`builder.with_identifiers(app_id=session_id).build()`, so the Burr `app_id`
+equals the FastMCP session id and the tracker directory
+(`storage_dir/project/<session_id>/`) is bound to the session. It never drifts
+when the session is reset, because the rebuild stamps the same id again. This is
+the recommended form when you use Burr tracking. The `() -> Application` form and
+a bare `Application` instance still work unchanged.
+
+```python
+def build_application():
+    return (
+        ApplicationBuilder()
+        .with_actions(...)
+        .with_transitions(...)
+        .with_tracker(tracker(project="incident"))
+        .with_entrypoint("acknowledge")   # no .build()
+    )
+
+mount(build_application, name="incident")
+```
 
 Eviction is lazy: stale entries are dropped on the next access, not on a
 background timer. `session_ttl_seconds` (default 3600) and `max_sessions`

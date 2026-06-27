@@ -47,18 +47,56 @@ appear in the timeline like any other step.
 | URI | Returns |
 |---|---|
 | `theodosia://graph` | Static FSM topology (actions, transitions, state schema). |
+| `theodosia://graph/mermaid` | The FSM as Mermaid `stateDiagram-v2` source, conditions on the edges. |
+| `theodosia://graph/dot` | The FSM as Graphviz DOT source. |
+| `theodosia://source/{action}` | One action's Python source via Burr `Action.get_source()`. |
 | `theodosia://state` | Current state for this session. |
 | `theodosia://next` | Valid next actions from the current state. |
 | `theodosia://history` | Per-session attempt timeline, including refusals. |
 | `theodosia://subruns`, `theodosia://subruns/{id}` | Sub-app index and full timeline. |
+| `theodosia://children` | Burr-native sub-applications spawned or forked from this session. |
+| `theodosia://upstreams` | Configured upstream MCP servers and their health. |
 | `theodosia://trace` | Burr's LocalTrackingClient JSONL mirrored for the agent. |
-| `theodosia://session` | Tracker coordinates: project, app_id, app_dir, partition_key. |
+| `theodosia://session` | Tracker coordinates plus run progress and fork/spawn lineage. |
+
+`theodosia://graph/mermaid` and `theodosia://graph/dot` return the same topology
+as the `render --mermaid` / `--dot` CLI flags, so an agent can read a renderable
+diagram of its own state machine. `theodosia://source/{action}` returns
+`{action, source}`, or `{"error": "unknown_action", ...}` for a name not in the
+graph and `{"error": "source_unavailable", ...}` when Burr cannot read the
+function's source.
+
+`theodosia://session` returns the tracker coordinates (`project`, `app_id`,
+`app_dir`, `partition_key`) and adds `sequence_id`, `current_action` (the action
+auto-routing would run next), and the mounted app's own fork/spawn lineage as
+`parent` / `spawning_parent`. Those two are null for a root session; the
+descendant direction (sessions this one spawned) is `theodosia://children`.
+
+`theodosia://children` reads Burr's `children.jsonl`: each entry carries the
+child `app_id`, an `event_type` (`spawn_start` for a spawn, `fork` for a fork),
+the parent `sequence_id` where the link was made, and an `event_time`. It is
+distinct from `theodosia://subruns`, which indexes Theodosia's own
+`spawn_subapp` runs; `children` follows sub-applications created by Burr directly
+inside your action code. It resolves only when the child's tracker shares this
+session's `storage_dir` and project.
+
+`theodosia://upstreams` reports configured upstream MCP servers. Shared upstreams
+are pinged (opened, tools listed) and returned as
+`{"mode": "shared", "upstreams": [{server, status, tools|error}]}`. Per-session
+upstreams report `{"mode": "per_session", "servers": [...]}` without spawning a
+client, and `{"mode": "none"}` is returned when no upstream is configured. See
+[Driving other MCP servers](upstream.md).
 
 `theodosia://history` captures what the *agent* attempted (including refused steps);
 `theodosia://trace` captures what *Burr* executed. A refused attempt carries one of
 five `refusal_reason` values (`invalid_transition`, `unknown_action`,
 `action_error`, `action_timeout`, `validation_failed`) so the agent can tell "the
 FSM said no" from "the action's code raised."
+
+Synchronous actions are driven through Burr's `app.step` rather than `app.astep`,
+because the async path logged the pre-step state for a sync action, lagging
+`theodosia://trace` and `fork_from_past` by one step. The tracker now records the
+correct post-step state.
 
 ## For the terminal: the CLI
 

@@ -51,12 +51,17 @@ r.content              # [TextContent(headline), TextContent(json body)]
 | URI | Returns |
 |---|---|
 | `theodosia://graph` | Static FSM topology: actions, transitions, each action's required and optional inputs plus their JSON schemas (`input_schemas`, with full Pydantic `model_json_schema()` for typed inputs), and the state schema (the Pydantic JSON schema when typed state is used). |
+| `theodosia://graph/mermaid` | The FSM as Mermaid `stateDiagram-v2` source, with conditions on the edges. |
+| `theodosia://graph/dot` | The FSM as Graphviz DOT source. |
+| `theodosia://source/{action}` | One action's Python source via Burr `Action.get_source()`; returns `{action, source}`, or `{error: "unknown_action" \| "source_unavailable", ...}`. |
 | `theodosia://state` | The current state for this session. |
 | `theodosia://next` | The actions reachable from the current state. |
 | `theodosia://history` | The per-session attempt timeline, including refusals and forks. |
 | `theodosia://subruns`, `theodosia://subruns/{id}` | Sub-application index and a sub-run's full timeline. Appears only when the FSM uses `theodosia.spawn_subapp(...)`. |
+| `theodosia://children` | Burr-native sub-applications spawned or forked from this session (`children.jsonl`); distinct from `theodosia://subruns`. |
+| `theodosia://upstreams` | Configured upstream MCP servers and their health (`shared` mode pings them; `per_session` mode lists them; `none` when unconfigured). |
 | `theodosia://trace` | Burr's `LocalTrackingClient` JSONL, mirrored for the agent. |
-| `theodosia://session` | Tracker coordinates: project, `app_id`, app directory, partition key. |
+| `theodosia://session` | Tracker coordinates (project, `app_id`, app directory, partition key) plus `sequence_id`, `current_action`, and the `parent` / `spawning_parent` fork/spawn lineage. |
 
 ## Why the surface is fixed
 
