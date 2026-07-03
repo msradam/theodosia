@@ -42,6 +42,7 @@ export default defineConfig({
 				{
 					label: 'Concepts',
 					items: [
+						{ label: 'Why mount a graph', slug: 'comparison' },
 						{ label: 'Refusals and recovery', slug: 'refusals' },
 						{ label: 'Sessions and forking', slug: 'sessions' },
 						{ label: 'Architecture', slug: 'architecture' },

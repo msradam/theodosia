@@ -157,6 +157,7 @@ Full docs at **[msradam.github.io/theodosia](https://msradam.github.io/theodosia
 | [Build your own agent](https://msradam.github.io/theodosia/tutorial/) | End-to-end: write a Burr graph, serve it, drive it with an MCP client |
 | [Authoring a graph](https://msradam.github.io/theodosia/authoring/) | The Burr building blocks: `@action`, `Condition`, `with_transitions` |
 | [Architecture](https://msradam.github.io/theodosia/architecture/) | `mount()`, the four-tool surface, the action-selection bridge |
+| [Why mount a graph](https://msradam.github.io/theodosia/comparison/) | The same LangGraph workflow rendered three ways (LangGraph, Burr, Theodosia), and when mounting is worth it |
 | [Refusals](https://msradam.github.io/theodosia/refusals/) | The five refusal shapes and how the agent recovers |
 | [Sessions](https://msradam.github.io/theodosia/sessions/) | Per-session isolation, `fork_at`, `fork_from_past`, partition keys |
 | [Security model](https://msradam.github.io/theodosia/security-model/) | The trust boundary, what the ledger does and does not prove |
@@ -172,7 +173,7 @@ Full docs at **[msradam.github.io/theodosia](https://msradam.github.io/theodosia
 
 ## Examples and tests
 
-[`examples/`](examples/) ships self-contained FSMs covering pure-FSM, typed state, hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM, upstream, and multi-graph, plus branching (`diagnostic_fsm`), typed-input escalation (`deploy_approval`), and native sub-app spawning (`fanout_research`). [`examples/apps/`](examples/apps/) holds production-shaped agents that drive a real upstream MCP server (code review, incident response, research, data analysis), and [`examples/integrations/`](examples/integrations/) shows a Theodosia FSM mounted as one tool in a Strands agent. Each FSM runs with `uv run python examples/<file>.py`. The test suite runs with `uv run pytest`.
+[`examples/`](examples/) ships self-contained FSMs covering pure-FSM, typed state, hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM, upstream, and multi-graph, plus branching (`diagnostic_fsm`), typed-input escalation (`deploy_approval`), and native sub-app spawning (`fanout_research`). [`examples/apps/`](examples/apps/) holds production-shaped agents that drive a real upstream MCP server (code review, incident response, research, data analysis), and [`examples/integrations/`](examples/integrations/) shows a Theodosia FSM mounted as one tool in a Strands agent. [`examples/comparison/`](examples/comparison/) takes eight real LangGraph tutorials and renders each three ways (LangGraph original, Burr orchestrator, Theodosia over MCP) to show when mounting a graph for an agent to drive is worth it; see [Why mount a graph](https://msradam.github.io/theodosia/comparison/). Each FSM runs with `uv run python examples/<file>.py`. The test suite runs with `uv run pytest`.
 
 ## Related projects
 

@@ -20,4 +20,6 @@ Each is a standalone repository you can clone and run, a real agent rather than 
 
 The [`examples/`](https://github.com/msradam/theodosia/tree/main/examples) directory in the Theodosia repo ships self-contained FSMs covering the surfaces in [What works through mount()](compatibility.md): pure-FSM, typed state, lifecycle hooks, persistence, real shellouts, LLM-in-the-graph, SKILL-to-FSM conversions, `upstream`, and multi-graph. Each runs with `uv run python examples/<file>.py`.
 
+The [`examples/comparison/`](https://github.com/msradam/theodosia/tree/main/examples/comparison) suite takes real LangGraph tutorials and renders each three ways (LangGraph, Burr orchestrator, Theodosia over MCP); see [Why mount a graph](comparison.md) for the walkthrough.
+
 Start from [Authoring a graph](authoring.md) to build your own.
