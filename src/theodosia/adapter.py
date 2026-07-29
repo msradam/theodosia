@@ -265,7 +265,7 @@ def _build_persona_frame(
     if ctx is None or factory is None:
         return None
     try:
-        session_id = ctx.session_id
+        session_id = _session_key(ctx)
     except Exception:
         return None
     entry = store.get_or_create(session_id, factory)
@@ -326,6 +326,29 @@ _current_session_entry: contextvars.ContextVar[_SessionEntry | None] = contextva
 _current_fastmcp_context: contextvars.ContextVar[Context | None] = contextvars.ContextVar(
     "_theodosia_current_fastmcp_context", default=None
 )
+
+
+#: Explicit session handle supplied by the client as a tool argument. The
+#: MCP 2026-07-28 revision removed protocol-level sessions, so on modern
+#: connections ``ctx.session_id`` is a fresh UUID per request; the sanctioned
+#: replacement (SEP-2567) is a server-minted handle passed back as an
+#: ordinary tool argument. ``step``'s ``app_id`` is that handle.
+_session_handle: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_theodosia_session_handle", default=None
+)
+
+
+def _session_key(ctx: Context) -> str:
+    """Resolve the session key: explicit client handle, else transport id.
+
+    On pre-2026 protocol connections ``ctx.session_id`` is stable per client
+    and nothing changes. On sessionless connections it churns per request, so
+    continuity requires the client to echo the handle.
+    """
+    handle = _session_handle.get()
+    if handle is not None:
+        return handle
+    return ctx.session_id
 
 
 def current_mcp_context() -> Context | None:
@@ -611,7 +634,7 @@ def _record_history(
     """
     if ctx is None:
         return
-    entry = store.get_or_create(ctx.session_id, factory)
+    entry = store.get_or_create(_session_key(ctx), factory)
     record: dict[str, Any] = {
         "seq": len(entry.history),
         "ts": datetime.now(UTC).isoformat(),
@@ -784,7 +807,7 @@ def _session_app_and_lock(
     """
     if ctx is None:
         return shared_app, shared_lock, None
-    entry = store.get_or_create(ctx.session_id, factory)
+    entry = store.get_or_create(_session_key(ctx), factory)
     if factory is None:
         return shared_app, shared_lock, entry
     assert entry.application is not None  # factory mode guarantees this
@@ -952,6 +975,7 @@ async def _step_application(
         "state": state,
         "valid_next_actions": valid_next_action_names(app),
         "app_id": app.uid,
+        "session": _session_key(ctx) if ctx is not None else None,
         "tracker_project": _tracker_project(app),
     }
 
@@ -1017,6 +1041,7 @@ async def _step_streaming_action(
         "state": state,
         "valid_next_actions": valid_next_action_names(app),
         "app_id": app.uid,
+        "session": _session_key(ctx) if ctx is not None else None,
         "tracker_project": _tracker_project(app),
         "streamed": True,
         "chunks": chunk_count,
@@ -1372,7 +1397,7 @@ def _register_resources(
         its own history; in shared-app deployments each session sees the
         timeline of its own calls against the shared FSM.
         """
-        history = store.history(ctx.session_id) if ctx is not None else []
+        history = store.history(_session_key(ctx)) if ctx is not None else []
         return json.dumps(history, default=str, indent=2)
 
     @mcp.resource("theodosia://subruns")
@@ -1388,7 +1413,7 @@ def _register_resources(
         """
         if ctx is None:
             return json.dumps([])
-        entry = store.get_or_create(ctx.session_id, factory)
+        entry = store.get_or_create(_session_key(ctx), factory)
         return json.dumps(_subruns_index(entry), default=str, indent=2)
 
     @mcp.resource("theodosia://subruns/{subrun_id}")
@@ -1403,7 +1428,7 @@ def _register_resources(
         """
         if ctx is None:
             return json.dumps({"error": "no_session"})
-        entry = store.get_or_create(ctx.session_id, factory)
+        entry = store.get_or_create(_session_key(ctx), factory)
         record = entry.subruns.get(subrun_id)
         if record is None:
             return json.dumps(
@@ -1499,7 +1524,7 @@ def _register_resources(
         Application directly.
         """
         app, _, _ = _session_app_and_lock(ctx, shared_app, shared_lock, factory, store)
-        fastmcp_session_id = ctx.session_id if ctx is not None else None
+        fastmcp_session_id = _session_key(ctx) if ctx is not None else None
         return json.dumps(_session_coordinates(app, fastmcp_session_id), indent=2)
 
 
@@ -1637,6 +1662,7 @@ async def _handle_unknown_action(
     valid = valid_next_action_names(app)
     response: dict[str, Any] = {
         "error": "unknown_action",
+        "session": _session_key(ctx) if ctx is not None else None,
         "requested": action,
         "known_actions": action_names,
         "valid_next_actions": valid,
@@ -1691,6 +1717,8 @@ async def _handle_step_refusal(
     was blocked plus what's reachable now.
     """
     response, hist_kwargs = _refusal_payload(exc=exc, action_name=action, app=app)
+    if ctx is not None:
+        response["session"] = _session_key(ctx)
     state_for_hint, _ = _serializable_state(_public_state(app.state.get_all()))
     response = _with_next_guidance(
         response,
@@ -1840,6 +1868,7 @@ def _register_step_tool(
     async def step(
         action: str,
         inputs: dict[str, Any] | str | None = None,
+        session: str | None = None,
         ctx: Context | None = None,
     ) -> ToolResult:
         """Advance the FSM by one transition.
@@ -1867,15 +1896,26 @@ def _register_step_tool(
                 form. A JSON-encoded string is also accepted (some
                 clients serialize nested object arguments that way)
                 and is parsed into an object before dispatch.
+            session: Session handle for continuing a session across
+                calls. Every step result carries ``session``; pass it
+                back here on subsequent calls. Omit on the first call
+                (a session is created) and on transports that keep a
+                protocol-level session.
             ctx: Server-injected FastMCP request context; never supplied
                 by the client.
         """
+        if session is not None:
+            # Set-without-reset is safe: each MCP request dispatches in its
+            # own task, so the contextvar dies with the request. It must stay
+            # live past this frame because the response builders and history
+            # recorder resolve the session key after step's finally runs.
+            _session_handle.set(session)
         # Coerce a JSON-string inputs into a dict so the body always
         # sees the canonical shape.
         inputs = _coerce_inputs_arg(inputs)
         # Peek the seq that this call's history entry will get, so
         # the ctx.info headline matches the recorded seq.
-        seq = len(store.history(ctx.session_id)) if ctx is not None else 0
+        seq = len(store.history(_session_key(ctx))) if ctx is not None else 0
         if action not in action_map:
             return await _handle_unknown_action(
                 action=action,
@@ -1900,7 +1940,7 @@ def _register_step_tool(
             upstream_manager,
             upstream_per_session_config,
             entry,
-            ctx.session_id if ctx else "",
+            _session_key(ctx) if ctx else "",
         )
         upstream_token = bind_upstream(session_manager) if session_manager else None
         subruns_before = set(entry.subruns) if entry is not None else set()
@@ -2007,8 +2047,14 @@ def _register_reset_tool(
     # the human to restart the server when it reaches a terminal node
     # and wants to try another path.
 
-    async def reset_session(ctx: Context | None = None) -> ToolResult | dict[str, Any]:
+    async def reset_session(
+        session: str | None = None, ctx: Context | None = None
+    ) -> ToolResult | dict[str, Any]:
         """Reset this session's FSM to its entrypoint.
+
+        ``session`` is the same handle ``step`` takes: pass the ``app_id``
+        from a previous result to reset that session on sessionless
+        connections.
 
         Rebuilds the session's Application via the factory, clears any
         sub-runs the session spawned, and appends a ``reset_session``
@@ -2037,15 +2083,17 @@ def _register_reset_tool(
             )
         if ctx is None:
             return _step_tool_result({"error": "no_session"}, "reset_session × no_session")
+        if session is not None:
+            _session_handle.set(session)
 
-        entry = store.get_or_create(ctx.session_id, factory)
+        entry = store.get_or_create(_session_key(ctx), factory)
         async with entry.lock:
             previous_state, _ = _serializable_state(
                 _public_state(entry.application.state.get_all())
                 if entry.application is not None
                 else {}
             )
-            entry.application = factory(ctx.session_id)
+            entry.application = factory(_session_key(ctx))
             entry.subruns.clear()
             new_app = entry.application
             assert new_app is not None
@@ -2075,6 +2123,7 @@ def _register_reset_tool(
                 "state": new_state,
                 "valid_next_actions": valid_next,
                 "app_id": new_app.uid,
+                "session": _session_key(ctx),
                 "tracker_project": _tracker_project(new_app),
             },
             headline,
@@ -2211,7 +2260,7 @@ def _register_fork_at_tool(
                 "fork_at × missing_sequence_id",
             )
 
-        entry = store.get_or_create(ctx.session_id, factory)
+        entry = store.get_or_create(_session_key(ctx), factory)
         async with entry.lock:
             refusal = _fork_target_refusal(entry, sequence_id)
             if refusal is not None:
@@ -2235,7 +2284,7 @@ def _register_fork_at_tool(
             new_app, new_state, valid_next = _restore_snapshot(
                 entry=entry,
                 factory=factory,
-                session_id=ctx.session_id,
+                session_id=_session_key(ctx),
                 state_dict=saved_state,
                 last_action=target_action,
                 sequence_id_override=sequence_id,
@@ -2439,7 +2488,7 @@ def _register_fork_from_past_tool(
         if ctx is None:
             return _step_tool_result({"error": "no_session"}, "fork_from_past × no_session")
 
-        entry = store.get_or_create(ctx.session_id, factory)
+        entry = store.get_or_create(_session_key(ctx), factory)
         # Bind ``partition_key`` to the calling session's identity. Without
         # this, a caller could pass any partition_key and load another
         # tenant's persisted state. The bound partition_key is the one the
@@ -2487,7 +2536,7 @@ def _register_fork_from_past_tool(
             new_app, new_state, valid_next = _restore_snapshot(
                 entry=entry,
                 factory=factory,
-                session_id=ctx.session_id,
+                session_id=_session_key(ctx),
                 state_dict=loaded_state_dict,
                 last_action=last_action,
             )
@@ -2791,7 +2840,7 @@ def mount(
     # the hooks are attached after construction.
     if hooks:
         factory = _wrap_with_hooks(shared_app, factory, hooks)
-    # Per-session store keyed by ctx.session_id; populated lazily on
+    # Per-session store keyed by _session_key(ctx); populated lazily on
     # the first tool call. Lives in closure scope so it's tied to this
     # server instance, not module-global. Holds both the session's
     # Application (factory mode only) and its history (always).

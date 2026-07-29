@@ -8,6 +8,32 @@ versioning.
 
 _Nothing yet._
 
+## [0.9.0] - 2026-07-29
+
+Session handles: forward compatibility with the sessionless MCP 2026-07-28
+revision. Additive; session-ful transports behave exactly as before.
+
+### Added
+
+- **`session` response field.** Every `step`, `reset_session`, and refusal
+  result carries the server-minted session handle (the session key; distinct
+  from `app_id`, which only coincides for builder factories under the default
+  `session_app_id`). Declared in the `step` output schema.
+- **`session` argument on `step` and `reset_session`.** Echo the handle from a
+  previous result to continue that session. The MCP 2026-07-28 revision removed
+  protocol-level sessions (SEP-2567); on sessionless transports each request
+  arrives on a fresh connection, and the echoed handle is the continuity
+  mechanism. On transports with protocol sessions the argument is unnecessary
+  and calls without it behave as before. Verified against FastMCP 4.0.0b1
+  (continuity, isolation of interleaved handles, refusal recovery, reset); the
+  shipping pin stays `fastmcp>=3.4,<4.0`.
+
+### Fixed
+
+- **Test-suite env leak.** Comparison examples set `THEODOSIA_HOME` in-process;
+  the autouse isolation fixture now restores it (and `THEODOSIA_QUIET`) after
+  every test, fixing order-dependent ledger-test failures.
+
 ## [0.8.0] - 2026-06-27
 
 Lazy tracking (a session leaves a trace only when it does something), session

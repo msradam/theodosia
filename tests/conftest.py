@@ -51,6 +51,13 @@ def _isolate_burr_home(request, monkeypatch, tmp_path):
     if "smoke" in request.keywords:
         return
     monkeypatch.setenv("HOME", str(tmp_path))
+    # Some comparison examples set THEODOSIA_HOME/THEODOSIA_QUIET via
+    # os.environ inside their demo functions; tracker() prefers the env var
+    # over ~/.theodosia, so a leaked value redirects every later test's
+    # ledger writes. Registering the keys with monkeypatch guarantees they
+    # are restored at teardown even when the test body sets them directly.
+    monkeypatch.delenv("THEODOSIA_HOME", raising=False)
+    monkeypatch.delenv("THEODOSIA_QUIET", raising=False)
 
 
 @pytest.fixture

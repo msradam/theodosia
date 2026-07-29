@@ -56,6 +56,14 @@ def _step_response_schema() -> dict[str, Any]:
                 "description": "Public Application state after the step.",
             },
             "app_id": {"type": "string", "description": "Application uid."},
+            "session": {
+                "type": ["string", "null"],
+                "description": (
+                    "Session handle. Pass this back as step's `session` "
+                    "argument to continue the same session on transports "
+                    "without protocol-level sessions."
+                ),
+            },
             "tracker_project": {
                 "type": ["string", "null"],
                 "description": "LocalTrackingClient project name if attached.",

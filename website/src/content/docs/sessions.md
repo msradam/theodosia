@@ -26,6 +26,25 @@ mount(build_application(), name="incident")  # shared: one state for all session
 Sessions are evicted lazily, on access, by TTL (`session_ttl_seconds`, default
 3600) and count (`max_sessions`, default 100). There is no background timer.
 
+## Session handles
+
+Every `step`, `reset_session`, and refusal result carries a `session` field:
+the server-minted handle for the session that served the call. `step` and
+`reset_session` accept it back as an optional `session` argument.
+
+On today's transports (stdio, SSE, Streamable HTTP with protocol sessions)
+you can ignore it: the transport keeps a stable session and calls without a
+handle continue it, exactly as before. On sessionless transports (the MCP
+2026-07-28 revision removed protocol-level sessions, so each request arrives
+on a fresh connection) the handle is the continuity mechanism: omit it on the
+first call, then echo the `session` value from each result into the next
+call. A call without a handle on such a transport starts a fresh session.
+
+The handle is the session key, not the Burr `app_id`; the two coincide only
+for builder factories under the default `session_app_id`. Without
+authentication a handle is a bearer capability, the same trust model as the
+rest of the tool surface (see [Security model](security-model.md)).
+
 ## `reset_session`
 
 Rebuilds this session's `Application` from the factory, discarding its state and
