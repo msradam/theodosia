@@ -9,6 +9,8 @@ session having been recorded on the dev's machine.
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -165,8 +167,11 @@ def test_resolve_app_uses_most_recent_when_unspecified(tmp_path):
     proj = tmp_path / "myproj"
     (proj / "app-old").mkdir(parents=True)
     (proj / "app-new").mkdir(parents=True)
-    # Touch app-new last so its mtime is newer.
     (proj / "app-new" / "log.jsonl").write_text("{}\n")
+    # Explicit mtimes: mkdir-then-write ordering ties within filesystem
+    # timestamp granularity on fast runners.
+    old = time.time() - 100
+    os.utime(proj / "app-old", (old, old))
     log_path, resolved_proj, resolved_app = _resolve_app(tmp_path, None, None)
     assert resolved_proj == "myproj"
     assert resolved_app == "app-new"

@@ -10,6 +10,14 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
+# The comparison examples embed the verbatim LangGraph originals, which are
+# not project dependencies; without them the whole module is a skip, not an
+# error (CI runs `uv sync` only).
+pytest.importorskip("langgraph")
+pytest.importorskip("langchain_core")
+
 COMPARISON = Path(__file__).resolve().parents[1] / "examples" / "comparison"
 sys.path.insert(0, str(COMPARISON))
 
