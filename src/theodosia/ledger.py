@@ -197,9 +197,27 @@ def verify_ledger(
             "THEODOSIA_LEDGER_KEY, or treat this as tampering if the ledger "
             "was expected to be keyed"
         ]
-    genesis = GENESIS_HMAC if resolved_key is not None else GENESIS
+    problems, count, hash_mismatches = _walk_chain(p, expected_binding, resolved_key)
+    if resolved_key is not None and count > 0 and hash_mismatches == count:
+        problems.append(
+            "every entry fails under the provided key; THEODOSIA_LEDGER_KEY "
+            "likely does not match the key this ledger was written with"
+        )
+    if expected_min_entries is not None and count < expected_min_entries:
+        problems.append(
+            f"truncation: ledger has {count} entries; expected at least {expected_min_entries}"
+        )
+    return (not problems), problems
+
+
+def _walk_chain(
+    p: Path,
+    expected_binding: dict[str, Any] | None,
+    resolved_key: bytes | None,
+) -> tuple[list[str], int, int]:
+    """Recompute the chain line by line: ``(problems, entries, hash_mismatches)``."""
     problems: list[str] = []
-    prev = genesis
+    prev = GENESIS_HMAC if resolved_key is not None else GENESIS
     count = 0
     hash_mismatches = 0
     prev_seq: int | None = None
@@ -219,26 +237,19 @@ def verify_ledger(
             entry_problems = _check_entry(i, entry, prev, expected_binding, resolved_key)
             hash_mismatches += sum("hash mismatch" in msg for msg in entry_problems)
             problems.extend(entry_problems)
-            seq = entry.get("seq")
-            if isinstance(seq, int) and isinstance(prev_seq, int) and seq > prev_seq + 1:
-                problems.append(
-                    f"line {i}: seq gap ({prev_seq} -> {seq}); "
-                    f"{seq - prev_seq - 1} entry(ies) missing"
-                )
-            if isinstance(seq, int):
-                prev_seq = seq
+            problems.extend(_seq_gap_problem(i, entry.get("seq"), prev_seq))
+            if isinstance(entry.get("seq"), int):
+                prev_seq = entry["seq"]
             prev = entry.get("hash")
             count += 1
-    if resolved_key is not None and count > 0 and hash_mismatches == count:
-        problems.append(
-            "every entry fails under the provided key; THEODOSIA_LEDGER_KEY "
-            "likely does not match the key this ledger was written with"
-        )
-    if expected_min_entries is not None and count < expected_min_entries:
-        problems.append(
-            f"truncation: ledger has {count} entries; expected at least {expected_min_entries}"
-        )
-    return (not problems), problems
+    return problems, count, hash_mismatches
+
+
+def _seq_gap_problem(i: int, seq: Any, prev_seq: int | None) -> list[str]:
+    """Name a jump in the monotone seq numbering (a deleted entry) at line ``i``."""
+    if isinstance(seq, int) and isinstance(prev_seq, int) and seq > prev_seq + 1:
+        return [f"line {i}: seq gap ({prev_seq} -> {seq}); {seq - prev_seq - 1} entry(ies) missing"]
+    return []
 
 
 def _stored_mode(p: Path) -> str | None:
