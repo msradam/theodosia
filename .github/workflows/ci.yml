@@ -41,8 +41,12 @@ jobs:
         run: uv run bandit -r src/theodosia --severity-level medium
       - name: vulture (dead code; whitelist in vulture_whitelist.py)
         run: uvx vulture
+      # Pinned: complexipy 6.0 rescored the same code higher (the 5.x cap of
+      # 15 corresponds to 18 under 6.x); unpinned, CI flips red on tool
+      # releases with zero code change. Bump the pin and cap together, in
+      # lockstep with scripts/check.sh.
       - name: complexipy (cognitive complexity hard cap)
-        run: uvx complexipy src/theodosia -mx 15
+        run: uvx complexipy@6.2.0 src/theodosia -mx 18
       - name: detect-secrets (new findings vs audited baseline)
         run: uvx detect-secrets scan src/ tests/ examples/ --all-files --baseline .secrets.baseline
 

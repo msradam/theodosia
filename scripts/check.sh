@@ -28,14 +28,18 @@ uv run bandit -r src/theodosia --severity-level medium -q
 step "vulture (dead code)"
 uvx vulture
 
-step "complexipy (cognitive complexity <= 15)"
-uvx complexipy src/theodosia -mx 15
+# Pinned: complexipy 6.0 rescored the same code higher (the 5.x cap of 15
+# corresponds to 18 under 6.x). Unpinned, CI flips red on tool releases with
+# zero code change. Bump the pin and recalibrate the cap together.
+step "complexipy (cognitive complexity <= 18 under 6.x scoring)"
+uvx complexipy@6.2.0 src/theodosia -mx 18
 
 step "detect-secrets (vs audited baseline)"
 uvx detect-secrets scan src/ tests/ examples/ --all-files --baseline .secrets.baseline
 
 step "pip-audit (dependency vulnerabilities)"
-uvx pip-audit --quiet || { echo "pip-audit found vulnerable dependencies"; exit 1; }
+# --quiet was removed from pip-audit; bare invocation matches ci.yml.
+uvx pip-audit || { echo "pip-audit found vulnerable dependencies"; exit 1; }
 
 if [[ "${1:-}" != "--fast" ]]; then
   step "pytest (full suite with coverage)"
