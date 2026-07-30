@@ -52,7 +52,25 @@ body ran. State is unchanged.
 }
 ```
 
-Validators are wired through `mount(..., input_validators={...})`.
+Validators are wired through `mount(..., input_validators={...})`: a dict
+mapping action name to a callable `(state_dict, inputs) -> dict | None`. It
+runs after the reachability check and before the action body. Raise
+`theodosia.ValidationFailed("reason", details={...})` to refuse; return `None`
+to accept the inputs as-is; return a dict to substitute normalized inputs.
+
+```python
+from theodosia import ValidationFailed, mount
+
+def check_modifier(state, inputs):
+    if inputs.get("modifier") not in {"oat", "soy", "almond"}:
+        raise ValidationFailed(
+            "modifier must be one of: oat, soy, almond",
+            details={"field": "modifier", "got": inputs.get("modifier")},
+        )
+    return None
+
+mount(build_application, input_validators={"add_modifier": check_modifier})
+```
 
 ## `action_timeout`
 

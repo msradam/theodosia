@@ -35,6 +35,11 @@ the same shape.
 
 Run `claude` in the project, then `/mcp` confirms the connection.
 
+For a scripted or ephemeral driver (`claude -p "..." --mcp-config
+config.json`), add `--strict-mcp-config` so only your server loads;
+without it the user's own connectors also attach, and their startup and
+tool listings cost the agent turns before the first `step`.
+
 Examples ship in this repo under `examples/claude-code.example.json`.
 
 ## Recipe 2: stdio via Cursor

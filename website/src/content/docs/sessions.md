@@ -43,7 +43,14 @@ call. A call without a handle on such a transport starts a fresh session.
 The handle is the session key, not the Burr `app_id`; the two coincide only
 for builder factories under the default `session_app_id`. Without
 authentication a handle is a bearer capability, the same trust model as the
-rest of the tool surface (see [Security model](security-model.md)).
+rest of the tool surface (see [Security model](security-model.md)). A handle
+passed on a first call is accepted and becomes the session key verbatim, so
+treat handles as server-issued opaque strings rather than minting your own.
+
+Known limitation: the `theodosia://` resources and the fork tools resolve
+against the transport session only; they cannot yet target an explicit
+handle. On sessionless transports, use the `state`, `valid_next_actions`,
+and `next_action_schemas` carried in every `step` result instead.
 
 ## `reset_session`
 

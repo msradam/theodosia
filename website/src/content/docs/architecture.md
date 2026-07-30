@@ -63,9 +63,21 @@ clients that render server logs inline, like `Step 3: verify_usage ✓ → resol
 and a structured JSON payload with the machine-readable result. A programmatic
 client should read the structured payload (FastMCP exposes it as
 `result.structured_content`, or the JSON block of `result.content`), not the
-summary string. Both success and refusal come back on this same shape: a refusal
-is `{"error": "invalid_transition", "valid_next_actions": [...], ...}`, an
-action-body failure is `{"error": "action_error", "error_message": "..."}`.
+summary string. Both success and refusal come back on this same shape. A refusal carries
+`error`, the `requested` action, `valid_next_actions`, a prose `message` and
+`next_hint`, `next_action_schemas` (the input schema of each legal move, so
+recovery needs no extra round-trip), and the `session` handle; an action-body
+failure adds `error_type` and `error_message`.
+
+Guidance refusals (`invalid_transition`, `unknown_action`,
+`validation_failed`) return as *successful* tool results (`isError` false):
+the server answered the protocol question correctly, and the payload is the
+answer. Genuine execution failures (`action_error`, `action_timeout`) set
+`isError` true, so a framework's tool-error routing fires on them. Note that
+FastMCP's `client.call_tool` raises on `isError` by default
+(`raise_on_error=False` to inspect the payload instead), and
+`THEODOSIA_STRICT_ERRORS=1` flips guidance refusals to `isError` true for
+frameworks that only surface errors through that path.
 
 ## Action selection
 

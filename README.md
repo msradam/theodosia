@@ -73,6 +73,7 @@ Exercise the server in-process with FastMCP's `Client`:
 ```python
 import asyncio
 from fastmcp import Client
+from theodosia import mount
 from coffee import build_application
 
 async def main():
@@ -86,16 +87,18 @@ async def main():
 asyncio.run(main())
 ```
 
-A client that calls `pay` before `take_order` gets a structured refusal it can recover from:
+A client that calls `pay` before `take_order` gets a structured refusal it can recover from (shown trimmed; the full payload also carries the requested action, a prose hint, per-action input schemas for the legal moves, and the session handle):
 
 ```json
 { "error": "invalid_transition", "valid_next_actions": ["take_order"] }
 ```
 
+The Quickstart records nothing on disk: the ledger and the `sessions` / `logs` / `verify` CLI read Burr's tracker, which is opt-in. Wire `.with_tracker(theodosia.tracker(project="my-project"))` into the builder to record every attempt.
+
 ## Primitives
 
 - **`mount(application, *, hooks=[...], middleware=[...], upstream=..., personas=...)`** wraps a Burr `Application` (or factory) as a FastMCP server. Returns the server; call `.run()` or pass to FastMCP's in-memory `Client`. Optional kwargs forward Burr `LifecycleAdapter`, FastMCP `Middleware`, upstream MCP clients, and `PERSONA.md` identity layers. A factory may return an unbuilt `ApplicationBuilder`; Theodosia then stamps `app_id = session_id`, so the Burr tracking dir is bound to the session and never drifts on reset.
-- **The four MCP tools** every mounted server exposes: `step(action, inputs, session=None)`, `reset_session`, `fork_at(sequence_id)`, `fork_from_past(app_id, sequence_id)`. Every result carries a `session` handle; echoing it back as `step`'s `session` argument keeps continuity on transports without protocol-level sessions (the MCP 2026-07-28 revision), and is unnecessary on session-ful transports, which behave as before. The action namespace lives in `step`'s argument schema; FSM complexity changes the schema, not the tool count. FastMCP's `ResourcesAsTools` transform adds `list_resources` and `read_resource` for clients that lack native `resources/read`.
+- **The four MCP tools**: `step(action, inputs, session=None)`, `reset_session`, `fork_at(sequence_id)`, `fork_from_past(app_id, sequence_id)`. `fork_from_past` stays hidden until a tracker or `state_loader` is wired (without one it could only ever refuse). Every `step`, `reset_session`, and refusal result carries a `session` handle; echoing it back as `step`'s `session` argument keeps continuity on transports without protocol-level sessions (the MCP 2026-07-28 revision), and is unnecessary on session-ful transports, which behave as before. The action namespace lives in `step`'s argument schema; FSM complexity changes the schema, not the tool count. FastMCP's `ResourcesAsTools` transform adds `list_resources` and `read_resource` for clients that lack native `resources/read`.
 - **Structured refusals** from `step`: `invalid_transition`, `unknown_action`, `validation_failed`, `action_timeout`, `action_error`. Every refusal carries `valid_next_actions`. `fork_at` / `fork_from_past` return their own `error` codes on the same wire shape.
 - **`theodosia://` resources** for inspection: `graph` (plus `graph/mermaid`, `graph/dot`, and `source/{action}`), `state`, `next`, `history`, `subruns`, `trace`, `children`, `upstreams`, and `session` (tracker coordinates, run progress, and fork/spawn lineage).
 - **`upstream`** lets a Burr action body call tools on other MCP servers through `call_upstream(server, tool, args)`. The agent driving Theodosia never sees those servers; it only sees `step`. A `{session}` placeholder in an upstream's config isolates stateful upstreams per session.

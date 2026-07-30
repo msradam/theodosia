@@ -503,8 +503,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       <div class="terminal-stack">
         <div class="terminal app-py">
           <div class="bar"><i></i><i></i><i></i><span class="ttl">app.py</span></div>
-<pre set:html={`<span class="cm"># A minimum-viable Burr workflow: 5 states, 4 transitions.</span>
+<pre set:html={`<span class="cm"># A minimum-viable Burr workflow: 4 actions, gated in sequence.</span>
 <span class="kw">from</span> burr.core <span class="kw">import</span> ApplicationBuilder, State, action
+<span class="kw">from</span> theodosia <span class="kw">import</span> tracker
 
 <span class="kw">@action</span>(reads=[<span class="str">"status"</span>], writes=[<span class="str">"status"</span>])
 <span class="kw">def</span> <span class="ac">page_oncall</span>(state): <span class="kw">return</span> state.update(status=<span class="str">"engaged"</span>)
@@ -518,13 +519,13 @@ incident = (
     ApplicationBuilder()
     .with_actions(page_oncall, verify, resolve, archive)
     .with_transitions(
-        (<span class="str">"triaged"</span>,  <span class="str">"engaged"</span>,  <span class="str">"page_oncall"</span>),
-        (<span class="str">"engaged"</span>,  <span class="str">"verified"</span>, <span class="str">"verify"</span>),
-        (<span class="str">"verified"</span>, <span class="str">"resolved"</span>, <span class="str">"resolve"</span>),
-        (<span class="str">"resolved"</span>, <span class="str">"closed"</span>,   <span class="str">"archive"</span>),
+        (<span class="str">"page_oncall"</span>, <span class="str">"verify"</span>),
+        (<span class="str">"verify"</span>,      <span class="str">"resolve"</span>),
+        (<span class="str">"resolve"</span>,     <span class="str">"archive"</span>),
     )
     .with_state(status=<span class="str">"triaged"</span>)
-    .with_terminal(<span class="str">"closed"</span>)
+    .with_tracker(tracker(project=<span class="str">"incident-response"</span>))
+    .with_entrypoint(<span class="str">"page_oncall"</span>)
     .build()
 )`} />
         </div>
@@ -534,7 +535,7 @@ incident = (
 <span class="cm"># mount the Application as an MCP server</span>
 <span class="pr">$</span> theodosia serve <span class="ac">app.py:incident</span>
   <span class="ok">⊢</span> serving incident-response on stdio
-  <span class="ok">⊢</span> 4 actions, 1 terminal ('closed')
+  <span class="ok">⊢</span> 4 actions, 1 terminal ('archive')
   <span class="ok">⊢</span> ledger → ~/.theodosia/incident-response/&lt;app-id&gt;/
 
 <span class="cm"># later, confirm the ledger chain is intact</span>

@@ -156,13 +156,13 @@ Quick glossary, since these terms recur:
 - **partition_key**: an optional tenant label set via Burr's
   `with_identifiers(partition_key=...)`; surfaces in `theodosia://session`.
 
-## Trap 3: `Condition.expr` reads pre-step state
+## Trap 3: conditions see the source action's post-run state
 
-A transition's condition is evaluated against the state of the source action
-*before* that action's writes land. If an action sets `borderline = True` in
-its body, the next *outgoing* transition can gate on `borderline == True`, but
-the transition *into* that action cannot. Concretely: write the gate-deciding
-field in action N's body, then gate the N → N+1 edge on it.
+The condition on an N → N+1 edge is evaluated after action N's writes land,
+against N's post-run state. What a condition can never see is the write of the
+action it leads *into*: the transition into an action cannot gate on a field
+that same action sets. Concretely: write the gate-deciding field in action N's
+body, then gate the N → N+1 edge on it.
 
 ## Typed inputs
 
