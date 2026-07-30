@@ -23,6 +23,11 @@ class StepRow:
     error_summary: str | None
     state_summary: dict[str, Any]
     state_raw: dict[str, Any] | None = None  # full state dict including __PRIOR_STEP
+    # Which reset-delimited run of the session this row belongs to. Burr
+    # restarts sequence_id at 0 after reset_session; the epoch keeps both
+    # runs in the timeline instead of letting the restart shadow the first.
+    # -1 marks rows (refusal sidecar) whose epoch is unknown.
+    epoch: int = 0
 
 
 def _read_refusals(log_path: Path) -> list[StepRow]:
@@ -56,6 +61,7 @@ def _read_refusals(log_path: Path) -> list[StepRow]:
                     status="error",
                     error_summary=f"{reason}: {msg}" if msg else reason,
                     state_summary={},
+                    epoch=-1,
                 )
             )
     return rows
@@ -81,12 +87,20 @@ def _terminal_state_may_be_stale(steps: list[StepRow]) -> bool:
 
 def _scan_tracker_log(
     log_path: Path,
-) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
-    """Read a Burr tracker JSONL into ``(begins, ends)`` keyed by sequence id."""
-    begins: dict[int, dict[str, Any]] = {}
-    ends: dict[int, dict[str, Any]] = {}
+) -> tuple[dict[tuple[int, int], dict[str, Any]], dict[tuple[int, int], dict[str, Any]]]:
+    """Read a Burr tracker JSONL into ``(begins, ends)`` keyed by (epoch, seq).
+
+    ``reset_session`` rebuilds the Application, and Burr restarts
+    ``sequence_id`` at 0 in the same ``log.jsonl``. Keyed by seq alone, the
+    post-reset entries would overwrite the pre-reset ones and the timeline
+    would silently understate what happened. A ``begin_entry`` whose seq is
+    already present in the current epoch marks the start of a new epoch.
+    """
+    begins: dict[tuple[int, int], dict[str, Any]] = {}
+    ends: dict[tuple[int, int], dict[str, Any]] = {}
     if not log_path.exists():
         return begins, ends
+    epoch = 0
     with log_path.open() as f:
         for line in f:
             line = line.strip()
@@ -100,9 +114,11 @@ def _scan_tracker_log(
             if seq is None:
                 continue
             if rec.get("type") == "begin_entry":
-                begins[seq] = rec
+                if (epoch, seq) in begins:
+                    epoch += 1
+                begins[(epoch, seq)] = rec
             elif rec.get("type") == "end_entry":
-                ends[seq] = rec
+                ends[(epoch, seq)] = rec
     return begins, ends
 
 
@@ -111,6 +127,7 @@ def _completed_row(
     b: dict[str, Any],
     e: dict[str, Any],
     state: dict[str, Any],
+    epoch: int = 0,
 ) -> StepRow:
     """Build the row for a step with both begin and end entries."""
     started = b.get("start_time", "")
@@ -125,6 +142,7 @@ def _completed_row(
         error_summary=_exception_summary(str(exc))[:140] if exc else None,
         state_summary=state_view,
         state_raw=state,
+        epoch=epoch,
     )
 
 
@@ -140,23 +158,25 @@ def _read_steps(log_path: Path) -> list[StepRow]:
     """
     begins, ends = _scan_tracker_log(log_path)
 
-    def _post_state(seq: int, action_name: str) -> dict[str, Any]:
-        e = ends.get(seq)
+    def _post_state(key: tuple[int, int], action_name: str) -> dict[str, Any]:
+        e = ends.get(key)
         if e is None:
             return {}
         candidate = e.get("state") or {}
         if candidate.get("__PRIOR_STEP") == action_name:
             return candidate
-        for later_seq in sorted(s for s in ends if s > seq):
-            later_state = ends[later_seq].get("state") or {}
+        epoch, seq = key
+        for later_key in sorted(k for k in ends if k[0] == epoch and k[1] > seq):
+            later_state = ends[later_key].get("state") or {}
             if later_state.get("__PRIOR_STEP") == action_name:
                 return later_state
         return candidate
 
     rows: list[StepRow] = []
-    for seq in sorted(begins):
-        b = begins[seq]
-        e = ends.get(seq)
+    for key in sorted(begins):
+        epoch, seq = key
+        b = begins[key]
+        e = ends.get(key)
         if e is None:
             rows.append(
                 StepRow(
@@ -167,10 +187,11 @@ def _read_steps(log_path: Path) -> list[StepRow]:
                     status="running",
                     error_summary=None,
                     state_summary={},
+                    epoch=epoch,
                 )
             )
             continue
-        rows.append(_completed_row(seq, b, e, _post_state(seq, b.get("action", "?"))))
+        rows.append(_completed_row(seq, b, e, _post_state(key, b.get("action", "?")), epoch))
     return rows
 
 
@@ -190,11 +211,31 @@ def _exception_summary(exc: str) -> str:
     return lines[-1].strip()[:160]
 
 
-def _duration_ms(start: str, end: str) -> float | None:
+def _parse_ts_local(ts: str) -> datetime | None:
+    """Parse an ISO timestamp into naive local time.
+
+    Burr's tracker writes naive local timestamps; the refusal/ledger sidecars
+    write UTC with offset. Rendering both through this keeps every CLI view
+    in one zone (local) so events from the two sources line up.
+    """
     try:
-        s = datetime.fromisoformat(start)
-        e = datetime.fromisoformat(end)
+        when = datetime.fromisoformat(ts)
     except (ValueError, TypeError):
+        return None
+    if when.tzinfo is not None:
+        return when.astimezone().replace(tzinfo=None)
+    return when
+
+
+def _ts_sort_key(row: StepRow) -> tuple[datetime, int]:
+    when = _parse_ts_local(row.started)
+    return (when or datetime.min, row.seq)
+
+
+def _duration_ms(start: str, end: str) -> float | None:
+    s = _parse_ts_local(start)
+    e = _parse_ts_local(end)
+    if s is None or e is None:
         return None
     return round((e - s).total_seconds() * 1000, 1)
 
@@ -238,7 +279,16 @@ def _state_diff_text(
     return ", ".join(parts)
 
 
+def _display_local(ts: str) -> str:
+    """Full local-time rendering of an ISO timestamp, for report bodies."""
+    when = _parse_ts_local(ts)
+    return when.isoformat(timespec="seconds") if when is not None else ts
+
+
 def _short_ts(ts: str) -> str:
+    when = _parse_ts_local(ts)
+    if when is not None:
+        return when.strftime("%H:%M:%S")
     if "T" in ts:
         return ts.split("T", 1)[1].split(".", 1)[0]
     return ts
@@ -248,9 +298,8 @@ def _relative_when(ts: str) -> str:
     """Render an ISO timestamp as a short relative-time label (3m, 2h, 4d)."""
     if not ts:
         return ""
-    try:
-        when = datetime.fromisoformat(ts)
-    except ValueError:
+    when = _parse_ts_local(ts)
+    if when is None:
         return ts
     delta = datetime.now() - when
     s = int(delta.total_seconds())
@@ -295,7 +344,15 @@ def _build_steps_table(
     table.add_column("ms", justify="right", width=7, no_wrap=True, style="muted")
     table.add_column("state / error")
     prev_state: dict[str, Any] | None = None
+    last_epoch = 0
     for r in rows:
+        if r.epoch > last_epoch:
+            # Burr restarted sequence ids here: the session was reset. Mark
+            # it so the repeated seq numbers below read as a second run, not
+            # a rendering bug, and the pre-reset steps stay in the record.
+            table.add_row("", "", Text("↺", style="muted"), Text("(reset_session)", "muted"))
+            last_epoch = r.epoch
+            prev_state = None
         if r.status == "error":
             state_cell = Text(r.error_summary or "error", style="err")
         elif r.status == "running":

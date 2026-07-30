@@ -6,7 +6,28 @@ versioning.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **Resets no longer shadow history in the CLI views.** Burr restarts
+  `sequence_id` at 0 after `reset_session`; the log reader now tracks
+  reset-delimited epochs, so `sessions show`, `logs`, and `report` keep the
+  pre-reset steps, mark the reset (`↺ (reset_session)`), and report counts
+  that reconcile with the ledger. `sessions show` also includes refusals in
+  the timeline and headline counts (`3 step(s) · 2 refused · 1 reset(s)`).
+- **`verify` diagnoses key problems instead of reporting tampering.** A
+  keyed ledger verified without a key, an unkeyed ledger verified with one,
+  and a wrong key each get a targeted message naming `THEODOSIA_LEDGER_KEY`.
+  Problem line numbers are now 1-based file lines, and a deleted entry is
+  additionally reported as a `seq gap`.
+- **One timezone everywhere.** Burr logs naive local timestamps while the
+  refusal/ledger sidecars log UTC; every CLI view now renders local time, so
+  steps and refusals correlate without mental offset math.
+- **`logs` includes refusals by default** (previously only with
+  `--refusals`, which made a refusal-laden session look clean).
+- **`report` labels the two seq numberings** (executed-step seq vs ledger
+  seq) instead of showing them unlabeled in adjacent tables.
+- Console links printed by `status` and `sessions show` now note that
+  `theodosia ui` must be running for the URL to resolve.
 
 ## [0.9.0] - 2026-07-29
 

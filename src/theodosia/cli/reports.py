@@ -13,6 +13,7 @@ from theodosia.cli._branding import err_console
 from theodosia.cli._resolve import _resolve_app, _resolve_home
 from theodosia.cli._steps import (
     StepRow,
+    _display_local,
     _read_refusals,
     _read_steps,
     _terminal_state_may_be_stale,
@@ -95,13 +96,19 @@ def _timeline_section(steps: list[StepRow]) -> list[str]:
     lines = [
         "## Timeline",
         "",
-        "| seq | action | status | started | dur (ms) | error |",
+        "| seq | action | status | started (local) | dur (ms) | error |",
         "|---:|---|---|---|---:|---|",
     ]
+    last_epoch = 0
     for s in steps:
+        if s.epoch > last_epoch:
+            lines.append("| — | `(reset_session)` | reset | | - | |")
+            last_epoch = s.epoch
         dur = f"{s.duration_ms:.1f}" if s.duration_ms is not None else "-"
         err = (s.error_summary or "").replace("|", "\\|")[:80]
-        lines.append(f"| {s.seq} | `{s.action}` | {s.status} | {s.started} | {dur} | {err} |")
+        lines.append(
+            f"| {s.seq} | `{s.action}` | {s.status} | {_display_local(s.started)} | {dur} | {err} |"
+        )
     lines.append("")
     return lines
 
@@ -114,14 +121,16 @@ def _refusals_section(refusals: list[StepRow]) -> list[str]:
         "## Refusals",
         "",
         "Refusals are transitions the agent attempted that the FSM rejected. "
-        "They never advanced state; they are recorded here for postmortem.",
+        "They never advanced state; they are recorded here for postmortem. "
+        "Ledger seq counts every attempt in order, so it is a different "
+        "numbering than the Timeline's executed-step seq.",
         "",
-        "| seq | action | ts | reason |",
+        "| ledger seq | action | ts (local) | reason |",
         "|---:|---|---|---|",
     ]
     for r in refusals:
         reason = (r.error_summary or "").replace("|", "\\|")[:80]
-        lines.append(f"| {r.seq} | `{r.action}` | {r.started} | {reason} |")
+        lines.append(f"| {r.seq} | `{r.action}` | {_display_local(r.started)} | {reason} |")
     lines.append("")
     return lines
 
@@ -176,8 +185,8 @@ def _render_session_report(
         total_ms = sum(s.duration_ms or 0 for s in steps)
         lines.extend(
             (
-                f"- First action: `{first.action}` at {first.started}",
-                f"- Last action: `{last.action}` ({last.status}) at {last.started}",
+                f"- First action: `{first.action}` at {_display_local(first.started)}",
+                f"- Last action: `{last.action}` ({last.status}) at {_display_local(last.started)}",
                 f"- Total action duration: {total_ms:.1f} ms",
             )
         )

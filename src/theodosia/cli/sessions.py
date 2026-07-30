@@ -29,7 +29,16 @@ from theodosia.cli._steps import (
     _short_ts,
     _state_diff_text,
     _status_text,
+    _ts_sort_key,
 )
+
+
+def _console_line(ui_url: str) -> str:
+    """The session-console link plus the reminder that nothing serves it by default."""
+    return (
+        f"[muted]{brand_display_name()} console:[/] [link={ui_url}]{ui_url}[/]"
+        f"  [dim](serve it with: theodosia ui)[/]"
+    )
 
 
 def _session_project_dirs(home: Path, project: str | None) -> list[Path]:
@@ -209,7 +218,10 @@ def sessions_show(
     """Full post-mortem timeline of one session."""
     home = _resolve_home(home)
     log_path, proj, aid = _resolve_app(home, project, app_id)
-    rows = _read_steps(log_path)
+    steps = _read_steps(log_path)
+    refusals = _read_refusals(log_path)
+    rows = sorted(steps + refusals, key=_ts_sort_key)
+    resets = max((r.epoch for r in steps), default=0)
     ui_url = _burr_ui_url(proj, aid)
 
     if open_ui:
@@ -225,7 +237,9 @@ def sessions_show(
                     "app_id": aid,
                     "log_path": str(log_path),
                     "burr_ui_url": ui_url,
-                    "steps": [r.__dict__ for r in rows],
+                    "steps": [r.__dict__ for r in steps],
+                    "refusals": [r.__dict__ for r in refusals],
+                    "resets": resets,
                 }
             )
         )
@@ -233,17 +247,17 @@ def sessions_show(
 
     if not rows:
         console.print(f"[dim]No steps recorded yet at {log_path}[/]")
-        console.print(f"[muted]{brand_display_name()} console:[/] [link={ui_url}]{ui_url}[/]")
+        console.print(_console_line(ui_url))
         return
 
-    table = _build_steps_table(
-        rows,
-        project=proj,
-        app_id=aid,
-        title_suffix=f"  {len(rows)} step(s)",
-    )
+    suffix = f"  {len(steps)} step(s)"
+    if refusals:
+        suffix += f" · {len(refusals)} refused"
+    if resets:
+        suffix += f" · {resets} reset(s)"
+    table = _build_steps_table(rows, project=proj, app_id=aid, title_suffix=suffix)
     console.print(table)
-    console.print(f"[muted]{brand_display_name()} console:[/] [link={ui_url}]{ui_url}[/]")
+    console.print(_console_line(ui_url))
 
 
 def _diff_state_dicts(
@@ -530,15 +544,24 @@ def logs(
     """
     home = _resolve_home(home)
     log_path, _proj, _aid = _resolve_app(home, project, app_id)
-    rows = _read_steps(log_path)
+    steps = _read_steps(log_path)
+    refusals = _read_refusals(log_path)
     if refusals_only:
-        rows = [r for r in rows if r.status == "error"] + _read_refusals(log_path)
-        rows.sort(key=lambda r: (r.started, r.seq))
+        rows = [r for r in steps if r.status == "error"] + refusals
+    else:
+        rows = steps + refusals
+    rows.sort(key=_ts_sort_key)
     if not rows:
         console.print("[muted](no steps)[/]" if not plain else "(no steps)")
         return
     prev: dict[str, Any] | None = None
+    last_epoch = 0
     for r in rows:
+        if r.epoch > last_epoch:
+            last_epoch = r.epoch
+            prev = None
+            marker = "  -  --:--:--  ..   (reset_session)"
+            console.print(marker if plain else f"[muted]{marker}[/]", markup=not plain)
         detail = (
             r.error_summary or "error"
             if r.status == "error"

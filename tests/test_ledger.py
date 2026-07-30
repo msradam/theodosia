@@ -43,7 +43,7 @@ def test_altered_entry_is_detected(tmp_path):
 
     ok, problems = verify_ledger(path)
     assert not ok
-    assert any("line 0" in p and "hash mismatch" in p for p in problems)
+    assert any("line 1" in p and "hash mismatch" in p for p in problems)
 
 
 def test_deleted_line_breaks_chain(tmp_path):

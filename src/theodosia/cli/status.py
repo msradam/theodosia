@@ -179,7 +179,10 @@ def status(
         return
     console.print()
     console.print(_build_status_table(payload["projects"]))
-    console.print(f"\n[muted]{brand_display_name()} console:[/] [link={ui_root}]{ui_root}[/]")
+    console.print(
+        f"\n[muted]{brand_display_name()} console:[/] [link={ui_root}]{ui_root}[/]"
+        f"  [dim](serve it with: theodosia ui)[/]"
+    )
 
 
 def verify(

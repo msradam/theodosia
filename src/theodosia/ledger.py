@@ -175,17 +175,36 @@ def verify_ledger(
 
     ``expected_min_entries`` refuses a ledger shorter than the given count;
     use it with an external claim of recorded length to detect truncation.
+
+    Line numbers in problems are 1-based file lines. When the ledger's
+    stored hash prefix and the provided key disagree on keyed-vs-unkeyed
+    mode, the single problem returned names the key mismatch instead of
+    flagging every entry as altered.
     """
     p = Path(path)
     if not p.exists():
         return True, []
     resolved_key = _resolve_key(key)
+    stored_mode = _stored_mode(p)
+    if stored_mode == "keyed" and resolved_key is None:
+        return False, [
+            "keyed ledger (hmac-sha256 entries) verified without a key; set "
+            "THEODOSIA_LEDGER_KEY to the key this ledger was written with"
+        ]
+    if stored_mode == "unkeyed" and resolved_key is not None:
+        return False, [
+            "unkeyed ledger (sha256 entries) verified with a key; unset "
+            "THEODOSIA_LEDGER_KEY, or treat this as tampering if the ledger "
+            "was expected to be keyed"
+        ]
     genesis = GENESIS_HMAC if resolved_key is not None else GENESIS
     problems: list[str] = []
     prev = genesis
     count = 0
+    hash_mismatches = 0
+    prev_seq: int | None = None
     with p.open(encoding="utf-8") as fh:  # pragma: no mutate
-        for i, line in enumerate(fh):
+        for i, line in enumerate(fh, start=1):
             line = line.strip()
             if not line:
                 continue
@@ -197,14 +216,46 @@ def verify_ledger(
                 # prev-link check flags the break in the chain itself.
                 problems.append(f"line {i}: not valid JSON ({exc.msg})")
                 continue
-            problems.extend(_check_entry(i, entry, prev, expected_binding, resolved_key))
+            entry_problems = _check_entry(i, entry, prev, expected_binding, resolved_key)
+            hash_mismatches += sum("hash mismatch" in msg for msg in entry_problems)
+            problems.extend(entry_problems)
+            seq = entry.get("seq")
+            if isinstance(seq, int) and isinstance(prev_seq, int) and seq > prev_seq + 1:
+                problems.append(
+                    f"line {i}: seq gap ({prev_seq} -> {seq}); "
+                    f"{seq - prev_seq - 1} entry(ies) missing"
+                )
+            if isinstance(seq, int):
+                prev_seq = seq
             prev = entry.get("hash")
             count += 1
+    if resolved_key is not None and count > 0 and hash_mismatches == count:
+        problems.append(
+            "every entry fails under the provided key; THEODOSIA_LEDGER_KEY "
+            "likely does not match the key this ledger was written with"
+        )
     if expected_min_entries is not None and count < expected_min_entries:
         problems.append(
             f"truncation: ledger has {count} entries; expected at least {expected_min_entries}"
         )
     return (not problems), problems
+
+
+def _stored_mode(p: Path) -> str | None:
+    """Sniff whether the on-disk chain is keyed, from the first entry's hash prefix."""
+    with p.open(encoding="utf-8") as fh:  # pragma: no mutate
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            with contextlib.suppress(json.JSONDecodeError):
+                h = json.loads(line).get("hash") or ""
+                if h.startswith("hmac-sha256:"):
+                    return "keyed"
+                if h.startswith("sha256:"):
+                    return "unkeyed"
+            return None
+    return None
 
 
 def attestation_receipt(path: str | Path, *, key: bytes | None = None) -> dict[str, Any]:

@@ -97,10 +97,12 @@ def test_keyed_chain_verifies_only_under_its_key(events: list[dict], key: bytes)
             ledger.append(event)
         ok, problems = verify_ledger(path, key=key)
         assert ok, problems
-        # Unkeyed verification of a keyed chain must fail on every entry.
+        # Unkeyed verification of a keyed chain fails with the single
+        # key-mode diagnosis, not per-entry tamper noise.
         ok_unkeyed, problems_unkeyed = verify_ledger(path)
         assert not ok_unkeyed
-        assert len(problems_unkeyed) >= len(events)
+        assert len(problems_unkeyed) == 1
+        assert "THEODOSIA_LEDGER_KEY" in problems_unkeyed[0]
 
 
 @given(

@@ -11,11 +11,13 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import UTC
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from theodosia.cli import _read_steps, _resolve_app, _state_diff_text, app
+from theodosia.cli._steps import _short_ts
 
 runner = CliRunner()
 
@@ -366,3 +368,41 @@ def test_read_refusals_absent_sidecar_is_empty(tmp_path):
     log = tmp_path / "proj" / "app-1" / "log.jsonl"
     log.parent.mkdir(parents=True)
     assert _read_refusals(log) == []
+
+
+# == reset epochs and timezone normalization =========================
+
+
+def test_read_steps_keeps_pre_reset_steps(tmp_path):
+    """reset_session restarts Burr's sequence_id at 0 in the same log; the
+    reader must keep both runs instead of letting the restart shadow the
+    first (the audit views understated executed steps otherwise)."""
+    log = tmp_path / "log.jsonl"
+    _write_log(
+        log,
+        [
+            _begin(0, "ack"),
+            _end(0, "ack", {"operator": "oncall-bot"}),
+            _begin(1, "diagnose"),
+            _end(1, "diagnose", {"cause": "disk"}),
+            _begin(0, "ack"),
+            _end(0, "ack", {"operator": "adam"}),
+        ],
+    )
+    rows = _read_steps(log)
+    assert [(r.epoch, r.seq, r.action) for r in rows] == [
+        (0, 0, "ack"),
+        (0, 1, "diagnose"),
+        (1, 0, "ack"),
+    ]
+
+
+def test_short_ts_renders_utc_and_local_in_one_zone():
+    """Burr logs naive local; the refusal sidecar logs aware UTC. Both must
+    render in the same (local) zone or the two tables cannot be correlated."""
+    from datetime import datetime
+
+    aware = datetime(2026, 7, 30, 13, 25, 20, tzinfo=UTC)
+    local_naive = aware.astimezone().replace(tzinfo=None)
+    assert _short_ts(aware.isoformat()) == _short_ts(local_naive.isoformat())
+    assert _short_ts(local_naive.isoformat()) == local_naive.strftime("%H:%M:%S")

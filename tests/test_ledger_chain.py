@@ -210,7 +210,7 @@ def test_verify_reports_corrupt_line_instead_of_raising(tmp_path):
     path.write_text(lines[0] + "\n{garbled\n" + lines[1] + "\n")
     ok, problems = verify_ledger(path)
     assert not ok
-    assert any("line 1" in p and "not valid JSON" in p for p in problems)
+    assert any("line 2" in p and "not valid JSON" in p for p in problems)
 
 
 def test_reordered_entries_detected(tmp_path):
@@ -310,7 +310,7 @@ def test_corrupt_line_does_not_stop_verification_of_later_entries(tmp_path):
     # Exactly the JSON problem: the two real entries still verify (so no
     # prev-link or truncation problems pile on after the corrupt line).
     assert len(problems) == 1
-    assert problems[0].startswith("line 1: not valid JSON")
+    assert problems[0].startswith("line 2: not valid JSON")
 
 
 def test_hash_mismatch_message_names_line_and_cause(tmp_path):
@@ -322,7 +322,7 @@ def test_hash_mismatch_message_names_line_and_cause(tmp_path):
     path.write_text(json.dumps(entry, sort_keys=True, separators=(",", ":")) + "\n")
     ok, problems = verify_ledger(path)
     assert not ok
-    assert problems == ["line 0: hash mismatch (entry was altered)"]
+    assert problems == ["line 1: hash mismatch (entry was altered)"]
 
 
 def test_prev_link_message_names_line_and_cause(tmp_path):
@@ -334,7 +334,7 @@ def test_prev_link_message_names_line_and_cause(tmp_path):
     path.write_text(lines[1] + "\n")  # drop the first entry: prev points nowhere
     ok, problems = verify_ledger(path)
     assert not ok
-    assert "line 0: prev-link mismatch (chain broken before here)" in problems
+    assert "line 1: prev-link mismatch (chain broken before here)" in problems
 
 
 def test_attestation_receipt_with_explicit_key(tmp_path):
@@ -355,3 +355,59 @@ def test_attestation_head_survives_trailing_hashless_line(tmp_path):
     receipt = attestation_receipt(path)
     assert receipt["head_hash"] == head  # falls back to the previous head
     assert receipt["entries"] == 2
+
+
+def test_keyed_ledger_without_key_names_the_key_not_tampering(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    HashChainedLedger(path, key=b"\x01" * 32).append({"seq": 0})
+    ok, problems = verify_ledger(path)
+    assert not ok
+    assert len(problems) == 1
+    assert "THEODOSIA_LEDGER_KEY" in problems[0]
+    assert "altered" not in problems[0]
+
+
+def test_keyed_ledger_with_wrong_key_hints_key_mismatch(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    led = HashChainedLedger(path, key=b"\x01" * 32)
+    led.append({"seq": 0})
+    led.append({"seq": 1})
+    ok, problems = verify_ledger(path, key=b"\x02" * 32)
+    assert not ok
+    assert any("does not match" in p for p in problems)
+
+
+def test_unkeyed_ledger_with_key_names_the_mode_mismatch(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    HashChainedLedger(path).append({"seq": 0})
+    ok, problems = verify_ledger(path, key=b"\x01" * 32)
+    assert not ok
+    assert len(problems) == 1
+    assert "unkeyed ledger" in problems[0]
+
+
+def test_deleted_entry_reports_seq_gap(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    led = HashChainedLedger(path)
+    for i in range(3):
+        led.append({"seq": i})
+    lines = path.read_text().splitlines()
+    path.write_text("\n".join([lines[0], lines[2]]) + "\n")
+    ok, problems = verify_ledger(path)
+    assert not ok
+    assert any("seq gap (0 -> 2)" in p for p in problems)
+
+
+def test_problem_line_numbers_are_one_indexed(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    led = HashChainedLedger(path)
+    led.append({"seq": 0})
+    led.append({"seq": 1})
+    lines = path.read_text().splitlines()
+    entry = json.loads(lines[1])
+    entry["tampered"] = True
+    lines[1] = json.dumps(entry, sort_keys=True, separators=(",", ":"))
+    path.write_text("\n".join(lines) + "\n")
+    ok, problems = verify_ledger(path)
+    assert not ok
+    assert any(p.startswith("line 2:") for p in problems)
