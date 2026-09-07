@@ -34,8 +34,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "apache-burr[tracking]>=0.42,<0.43",
-    "fastmcp>=3.4,<4.0",
+    "apache-burr[tracking]>=0.42,<0.44",
+    "fastmcp>=3.4,<5.0",
     "pydantic>=2,<3",
     "typer>=0.12,<1.0",
 ]
@@ -54,12 +54,12 @@ Changelog = "https://github.com/msradam/theodosia/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 observability = [
-    "apache-burr[opentelemetry]>=0.42,<0.43",
+    "apache-burr[opentelemetry]>=0.42,<0.44",
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
 ]
 ui = [
-    "apache-burr[start]>=0.42,<0.43",
+    "apache-burr[start]>=0.42,<0.44",
 ]
 mellea = [
     "mellea>=0.1",
